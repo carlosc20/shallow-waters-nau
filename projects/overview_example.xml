@@ -1,0 +1,563 @@
+<?xml version="1.0" ?> 
+<!-- width=2560 height=1440 ; width=1920 height=1080 ; width=1440 height=810 ; width=1080 height=607 -->
+<!-- width=960 height=540 ; width=480 height=270  -->
+<project name="Shallow Water" width=1920 height=1080>
+	<assets>
+		<constants>
+			<!-- simulation grid -->
+			<constant name="NWIDTH"  	 	value=1016 />
+			<constant name="NHEIGHT" 	 	value=1016 />
+			<constant name="NWIDTH-1"  	 	value=1015 />
+			<constant name="NHEIGHT-1" 	 	value=1015 />
+			<constant name="NWIDTH+2BC"  	value=1024 />
+			<constant name="NHEIGHT+2BC" 	value=1024 />
+			<constant name="SIDES" 			value=4096 />
+			<constant name="MIP_LEVELS"  	value=10 />
+
+
+			<constant name="DX" 		 	value=0.1 />
+			<constant name="MAX_DT" 		value=0.001 />
+
+			<!-- caustic grid -->
+
+			<constant name="CWIDTH"  	 	value=1016 />
+			<constant name="CHEIGHT" 	 	value=1016 />
+			<constant name="CWIDTH-1"  	 	value=1015 />
+			<constant name="CHEIGHT-1" 	 	value=1015 />
+			<constant name="CDENSITY" 	 	value=1 />
+
+			<!-- caustic map texture -->
+			<constant name="CMAP_W"  	 	value=1024 />
+			<constant name="CMAP_H" 	 	value=1024 />
+ 
+			<!-- noise texture -->
+			<constant name="NOISE_DIM_W" 	value=1024 />
+			<constant name="NOISE_DIM_H" 	value=1024 />
+		</constants>
+
+		<attributes>
+			<!-- general -->
+			<!-- All,EnvReflection,SunReflection,Transmission,Refraction,Transmittance,Scattering,Flat -->
+			<attribute name="renderMode"	 			data="INT" 		type="RENDERER"		value=0 	/>
+			<attribute name="waterEnabled" 				data="INT"   	type="RENDERER" 	value=1  	/>
+			<attribute name="terrainEnabled" 			data="INT"   	type="RENDERER" 	value=1  	/>
+			<attribute name="skyboxEnabled" 			data="INT"   	type="RENDERER" 	value=1 	/>
+			<attribute name="boxEnabled" 				data="INT"   	type="RENDERER" 	value=0 	/>
+			<attribute name="reflEnabled" 				data="INT"   	type="RENDERER" 	value=1  	/>
+			<attribute name="causticsEnabled" 			data="INT"   	type="RENDERER" 	value=1  	/>
+			<attribute name="terrainCausticsEnabled" 	data="INT"   	type="RENDERER" 	value=0  	/>
+			<attribute name="fresnelEpsilon" 			data="FLOAT"  	type="RENDERER" 	value=0.01 />
+			<attribute name="nWidth" 					data="UINT"  	type="RENDERER" 	value="NWIDTH"  />
+			<attribute name="nHeight" 					data="UINT"  	type="RENDERER" 	value="NHEIGHT" />
+
+			<!-- initial terrain -->
+			<!-- "Standard,Ramp,?,Horizontal,Flat" -->
+			<attribute name="terrainMode"				data="INT" 		type="RENDERER"		value=0		/>
+			<attribute name="terrainMult"				data="FLOAT" 	type="RENDERER"		value=10 	/> <!-- 15 -->
+			<attribute name="terrainTiling" 			data="FLOAT"   	type="RENDERER" 	value=4 	/>
+
+			<!-- initial depth -->
+			<!-- "X wave,Middle Box,Y Wave,Ramp,Convex,Concave,Bubble,Flat" -->
+			<attribute name="depthMode"	 				data="INT" 		type="RENDERER"		value=9 	/>
+			<attribute name="lowDepth" 					data="FLOAT"   	type="RENDERER" 	value=10  	/>
+			<attribute name="highDepth" 				data="FLOAT"   	type="RENDERER" 	value=12 	/>
+			<attribute name="highRatio" 				data="FLOAT"   	type="RENDERER" 	value=0.2  	/>
+			<attribute name="shouldInit" 				data="INT"   	type="RENDERER" 	value=1  	/>
+			<attribute name="fixedBorderHeight"	 		data="INT" 		type="RENDERER"		value=9 	/>
+			
+
+			<!-- maximum mipmap -->
+			<attribute name="levels" 					data="INT" 		type="RENDERER" 	value="MIP_LEVELS" />
+			<attribute name="currentMipLevel" 			data="INT" 		type="PASS"  		value=0 	/>
+
+			<!-- intersection -->
+			<!-- "MaxMipmap,Linear+Binary" -->
+			<attribute name="intersectionMode"	 		data="INT" 		type="RENDERER" 	value=0  />
+			<attribute name="finestLevel"	 			data="INT" 		type="RENDERER" 	value=0  />
+			<attribute name="linearAprox"	 			data="INT" 		type="RENDERER" 	value=1  />
+			<attribute name="linearSteps"	 			data="INT" 		type="RENDERER" 	value=100  />
+			<attribute name="refineSteps"	 			data="INT" 		type="RENDERER" 	value=5  />
+
+			<!-- simulation -->
+			<attribute name="activeTex" 				data="INT"   	type="RENDERER" 	value=1 	/> 
+			<attribute name="simRunning" 				data="INT"   	type="RENDERER" 	value=0  	/>
+			<attribute name="simTime"  					data="FLOAT" 	type="RENDERER" 	value=0 	/>
+			<attribute name="dx" 	 					data="FLOAT" 	type="RENDERER" 	value="DX"  />
+			<attribute name="oodx" 	 					data="FLOAT" 	type="RENDERER" 	value=5   	/>
+			<attribute name="dt" 	 					data="FLOAT" 	type="RENDERER" 	value="MAX_DT"  />
+			<attribute name="maxDt"  					data="FLOAT" 	type="RENDERER"		value="MAX_DT"  />
+			<attribute name="epsilon" 					data="FLOAT" 	type="RENDERER" 	value=0.01  />
+			<attribute name="maxSpeedSolver" 			data="FLOAT" 	type="RENDERER" 	value=100  	/>
+
+			<!-- graphics vertex -->
+			<attribute name="threshold"	 				data="FLOAT" 	type="RENDERER" 	value=0.01  />
+			<attribute name="wetDryFix"	 				data="INT" 		type="RENDERER" 	value=1  	/>
+
+			<!-- water optical properties -->
+			<attribute name="nWater"	 				data="FLOAT" 	type="RENDERER" 	value=1.33  />
+			<attribute name="concAbsorb"	 			data="FLOAT" 	type="RENDERER" 	value=0  	/> 
+			<attribute name="concScatter"	 			data="FLOAT" 	type="RENDERER" 	value=0  	/>
+			<attribute name="absorptionCoef" 			data="VEC3"   	type="RENDERER" 	x=0.9 	y=0.60 	z=0.7  /> 
+			<attribute name="scatterDiffuse" 			data="VEC3"   	type="RENDERER" 	x=0.02 	y=0.25 	z=0.4  />
+			<attribute name="aproxLightPath" 			data="INT"   	type="RENDERER" 	value=0  	/>
+
+
+			<!-- brdf -->
+			<attribute name="ambientLight"	 			data="FLOAT" 	type="RENDERER" 	value=0.1  	/>
+			<attribute name="roughness" 				data="FLOAT"   	type="RENDERER" 	value=0.1  	/>
+
+			<!-- normal map noise -->
+			<!-- "disabled,perlin,cellular" -->
+			<attribute name="noiseMode"	 				data="INT" 		type="RENDERER"		value=2 	/>
+			<attribute name="noiseWidth" 				data="UINT"  	type="RENDERER" 	value="NOISE_DIM_W"  />
+			<attribute name="noiseHeight" 				data="UINT"  	type="RENDERER" 	value="NOISE_DIM_H" />
+			<attribute name="noiseSpeed" 				data="FLOAT"   	type="RENDERER" 	value=0.5  />
+			<attribute name="noiseOctaves" 				data="INT"   	type="RENDERER" 	value=2  	/>
+			<attribute name="noiseBaseAmplitude" 		data="FLOAT"   	type="RENDERER" 	value=0.12 	/>
+			<attribute name="noiseBaseFrequency" 		data="FLOAT"   	type="RENDERER" 	value=15  	/>
+			<attribute name="noiseGain" 				data="FLOAT"   	type="RENDERER" 	value=0.5  	/>
+			<attribute name="noiseRoughness" 			data="FLOAT"   	type="RENDERER" 	value=2  	/>
+			<attribute name="noiseSpeedGain" 			data="FLOAT"   	type="RENDERER" 	value=1  	/>
+			<attribute name="noiseWarping" 				data="FLOAT"   	type="RENDERER" 	value=0  />
+			<attribute name="noisePerlinShare" 			data="FLOAT"   	type="RENDERER" 	value=0  	/>
+			<attribute name="noiseWindEnabled" 			data="INT"   	type="RENDERER" 	value=0  	/>
+			<attribute name="noiseSquared" 				data="INT"   	type="RENDERER" 	value=0  	/>
+			
+
+			<!-- caustics -->
+			<attribute name="cWidth" 					data="UINT"  	type="RENDERER" 	value="CWIDTH"  />
+			<attribute name="cHeight" 					data="UINT"  	type="RENDERER" 	value="CHEIGHT" />
+			<attribute name="cResolutionW" 				data="UINT"  	type="RENDERER" 	value="CMAP_W"  />
+			<attribute name="cResolutionH" 				data="UINT"  	type="RENDERER" 	value="CMAP_H" 	/>
+			<attribute name="causticsGridDensity" 		data="FLOAT"   	type="RENDERER" 	value="CDENSITY"   	/>
+			<attribute name="causticsIters" 			data="INT"   	type="RENDERER" 	value=4  	/>
+			<attribute name="cErrorDeltaThreshold" 		data="FLOAT"   	type="RENDERER" 	value=0.01  />
+			
+			<!-- debug -->
+			<attribute name="test"	 					data="FLOAT" 	type="RENDERER"		value=0  	/>
+		</attributes>
+
+		<scenes>
+			<scene name="Grid">
+				<buffers name="gridVAO" primitive="TRIANGLES">
+					<index 		name="gridIndex" 	fromLibrary="Main" />
+					<position 	name="gridPos" 		fromLibrary="Main" />
+					<normal     name="gridNormal"  	fromLibrary="Main" />
+				</buffers>
+				<SCALE x=DX y=1 z=DX /> 
+			</scene>
+
+			<scene name="GridSides">
+				<buffers name="gridSidesVAO" primitive="TRIANGLE_STRIP">
+					<index 		name="gridSidesIndex" 	fromLibrary="Main" />
+					<position 	name="gridSidesPos" 	fromLibrary="Main" />
+					<normal     name="gridSidesNormal"  fromLibrary="Main" />
+				</buffers>
+				<SCALE x=DX y=1 z=DX />
+			</scene>
+
+			<scene name="Skybox">
+                <geometry name="skybox" type="BOX" material="mat_skybox" />
+            </scene>
+
+			<scene name="BackgroundGrid">
+        		<buffers name="backgroundGridVAO" primitive="TRIANGLE_STRIP">
+					<index 		name="backgroundGridIndex" 	fromLibrary="Main" />
+					<position 	name="backgroundGridPos" 	fromLibrary="Main" />
+				</buffers>
+				
+			</scene>
+
+			<scene name="CausticsGrid">
+        		<buffers name="gridCausticsVAO" primitive="TRIANGLES">
+					<index 		name="causticsIndex" 	fromLibrary="Main" />
+					<position 	name="causticsData" 	fromLibrary="Main" />
+				</buffers>
+			</scene>
+
+			<scene name="Box">
+        		<buffers name="boxVAO" primitive="TRIANGLES">
+					<index 		name="boxIndex" 	fromLibrary="Main" />
+					<position 	name="boxPos" 	fromLibrary="Main" />
+					<normal     name="boxNormal"  fromLibrary="Main" />
+					<!-- <texCoord0  name="boxTexCoord" fromLibrary="Main" /> -->
+				</buffers>
+				<SCALE x=DX y=1 z=DX /> 
+			</scene>
+		</scenes>
+		
+		<viewports>
+			<viewport name="MainViewport">
+				<ORIGIN x=0 y=0 />
+				<SIZE width=1 height=1 />
+				<CLEAR_COLOR r="0.2" g="0.2" b="0.2" />
+			</viewport>
+		</viewports>
+		
+		<cameras>
+			<camera name="MainCamera" >
+				<viewport name="MainViewport" />
+				<!-- <POSITION x="25.6" y="35" z="69" /> -->
+				<POSITION x="50.4" y="42" z="-42" />
+				<NEAR value="1" />
+                <FAR value="500" /> 
+				<LOOK_AT_POINT x="50.4" y="0.0" z="50.4" />
+			</camera>
+			<camera name="AboveCamera" > <!-- Set in init script -->
+				<TYPE value="ORTHO" />
+				<POSITION x="32" y="30" z="24" />
+				<NEAR value="1" />
+                <FAR value="31" /> 
+				<VIEW   x=0.0 y=-1.0 z=0.0 />
+                <UP     x=0.0 y=0.0 z=-1.0 />
+				<TOP value="24" />
+				<BOTTOM value="-24" />
+				<LEFT value="-32" />
+				<RIGHT value="32" />
+			</camera>
+		</cameras>
+		
+		<lights>
+			<light name="Sun">
+				<!-- <DIRECTION x="0.2" y="-0.6" z="0" /> -->
+				<DIRECTION x="-0.365" y="-0.477" z="-0.8" />
+				<COLOR r="0.9" g="0.9" b="0.9" />
+				<AMBIENT r="0.3" g="0.3" b="0.3" />
+			</light>
+		</lights>
+		
+		<materialLibs>
+			<materialLib filename="matLib.mlib"/>
+		</materialLibs> 
+	</assets>
+
+	<!--***********************************************************************************
+		Pipelines
+	************************************************************************************-->
+	<pipelines>
+		<pipeline name="Main" default="true" defaultCamera="MainCamera">
+
+			<!--***********************************************************************************
+				Initialization
+			************************************************************************************-->
+			<preScript script="init" file="../scripts/main.lua" />
+
+			<pass class="compute" name="initBathymetry">
+                <mode value="RUN_ONCE"/>
+                <material name="mat_initBathymetry" fromLibrary="Main" dimX="1" dimY="1" dimZ="1"/>
+            </pass>
+
+			<pass class="compute" name="initGrid">
+                <mode value="RUN_ONCE"/>
+                <material name="mat_initGrid" fromLibrary="Main" dimX="1" dimY="1" dimZ="1"/>
+            </pass>
+
+			<pass class="quad" name="initSimDataPing" >
+				<testScript script="testInitSim" file="../scripts/main.lua" />
+				<renderTarget name="rt_initSimData1" fromLibrary="Main" />
+				<material name="mat_initSimData" fromLibrary="Main" />
+			</pass>
+
+			<pass class="quad" name="initSimDataPong" >
+				<testScript script="testInitSim" file="../scripts/main.lua" />
+				<renderTarget name="rt_initSimData2" fromLibrary="Main" />
+				<material name="mat_initSimData" fromLibrary="Main" />
+			</pass>
+
+			<pass class="quad" name="initNormalAndHeight" >
+				<testScript script="testInitSimReset" file="../scripts/main.lua" />
+				<renderTarget name="rt_initNormalAndHeight" fromLibrary="Main" />
+				<material name="mat_initNormalAndHeight" fromLibrary="Main" />
+			</pass>
+
+			<pass class="compute" name="maximumMipmap">
+				<mode value="RUN_ONCE"/>
+				<testScript file="../scripts/main.lua" script="testMipmap" TEST_MODE="RUN_WHILE"/>
+				<material name="mat_maxMipmap" fromLibrary="Main" dimX=1 />  <!-- dims set in init script  -->
+			</pass>
+
+			<!--***********************************************************************************
+				Noise
+			************************************************************************************-->
+			<pass class="quad" name="noisePerlin">
+				<testScript script="perlinNoiseEnabled" file="../scripts/main.lua" />
+				<renderTarget name="rt_noise" fromLibrary="Main" />
+				<material name="mat_noisePerlin" fromLibrary="Main"/>
+			</pass>
+
+			<pass class="quad" name="noiseCellular">
+				<testScript script="cellularNoiseEnabled" file="../scripts/main.lua" />
+				<renderTarget name="rt_noiseTemp" fromLibrary="Main" />
+				<material name="mat_noiseCellular" fromLibrary="Main"/>
+			</pass>
+
+			<pass class="quad" name="noiseCellularNormals">
+				<testScript script="cellularNoiseEnabled" file="../scripts/main.lua" />
+				<renderTarget name="rt_noise" fromLibrary="Main" />
+				<material name="mat_normals" fromLibrary="Main"/>
+			</pass>
+
+			<!--***********************************************************************************
+				Caustics
+			************************************************************************************-->
+
+
+			<pass class="compute" name="computeCausticsBuffer"> 
+				<testScript script="causticsEnabled" file="../scripts/main.lua" />
+				<material name="mat_causticsBuffer" fromLibrary="Main" dimX=0 dimY=0 />
+			</pass>
+
+			<pass class="default" name="getCausticsMap">
+				<testScript script="causticsEnabled" file="../scripts/main.lua" />
+				<scenes>
+					<scene name="CausticsGrid" />
+				</scenes>
+				<camera name="AboveCamera" />
+				<renderTarget name="rt_causticsMap" fromLibrary="Main" />
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_causticsMap" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<pass class="default" name="getCausticsMapPath">
+				<testScript script="aproxLightPathEnabled" file="../scripts/main.lua" />
+				<scenes>
+					<scene name="CausticsGrid" />
+				</scenes>
+				<camera name="AboveCamera" />
+				<renderTarget name="rt_causticsMapPath" fromLibrary="Main" />
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_causticsMapPath" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<!-- <pass class="default" name="DEBUG_getCausticsMap3d">
+				<testScript script="causticsEnabled" file="../scripts/main.lua" />
+				<scenes>
+					<scene name="CausticsGrid" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_causticsMapDebug" toLibrary="Main" />
+				</materialMaps>
+			</pass> -->
+
+			<!--***********************************************************************************
+				Terrain
+			************************************************************************************-->
+			<pass class="default" name="terrain">
+				<testScript script="terrainEnabled" file="../scripts/main.lua" />
+				<preScript script="wait" file="../scripts/main.lua" />
+				<scenes>
+					<scene name="Grid" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<lights>
+					<light name="Sun" />
+				</lights>
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_terrain" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<pass class="default" name="box">
+				<testScript script="boxEnabled" file="../scripts/main.lua" />
+				<scenes>
+					<scene name="Box" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<lights>
+					<light name="Sun" />
+				</lights>
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_box" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<!--***********************************************************************************
+				Water
+			************************************************************************************-->
+			<pass class="default" name="water">
+				<testScript script="waterEnabled" file="../scripts/main.lua" />
+				<COLOR_CLEAR value="false"/>
+				<DEPTH_CLEAR value="false"/>
+				<scenes>
+					<scene name="Grid" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<lights>
+					<light name="Sun" />
+				</lights>
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_water" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<pass class="default" name="waterSides">
+				<testScript script="waterSidesEnabled" file="../scripts/main.lua" />
+				<COLOR_CLEAR value="false"/>
+				<DEPTH_CLEAR value="false"/>
+				<scenes>
+					<scene name="GridSides" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<lights>
+					<light name="Sun" />
+				</lights>
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_waterSides" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<!--***********************************************************************************
+				Skybox
+			************************************************************************************-->
+			<pass class="default" name="skybox">
+				<testScript script="skyboxEnabled" file="../scripts/main.lua" />
+				<COLOR_CLEAR value="false"/>
+				<DEPTH_CLEAR value="false"/>
+				<scenes>
+					<scene name="Skybox" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<lights>
+					<light name="Sun" />
+				</lights>
+				<materialMaps>
+					<map fromMaterial="*" toMaterial="mat_skybox" toLibrary="Main" />
+				</materialMaps>
+			</pass>
+
+			<!--***********************************************************************************
+				Debug
+			************************************************************************************-->
+			<!-- <pass class="quad" name="DEBUG_showNoiseNormalMap" >
+				<viewport name="SideViewport" />
+				<texture name="noiseTex" fromLibrary="Main" />
+			</pass> -->
+			
+			<!-- <pass class="quad" name="DEBUG_showCausticsTexture" >
+				<testScript script="causticsEnabled" file="../scripts/main.lua" />
+				<viewport name="SideViewport" />
+				<material name="mat_showCausticQuad" fromLibrary="Main" />
+			</pass>
+
+			<pass class="quad" name="DEBUG_showCausticsPathTexture" >
+				<testScript script="causticsEnabled" file="../scripts/main.lua" />
+				<viewport name="SideViewport2" />
+				<material name="mat_showCausticPathQuad" fromLibrary="Main" />
+			</pass> -->
+
+
+			<!-- <pass class="default" name="DEBUG_aboveCamera">
+				<COLOR_CLEAR value="false"/>
+				<scenes>
+					<scene name="AboveCamera" />
+				</scenes>
+				<camera name="MainCamera" />
+				<viewport name="MainViewport" />
+				<lights>
+					<light name="Sun" />
+				</lights>
+			</pass> -->
+
+			<!-- <pass class="quad" name="DEBUG_showMimapLevel" >
+				<viewport name="SideViewport2" />
+				<material name="mat_showMipLevel" fromLibrary="Main" />
+			</pass> -->
+
+			<!--***********************************************************************************
+				Solver
+			************************************************************************************-->
+			<pass class="compute" name="computeStep">
+				<preScript script="setFrameTime" file="../scripts/main.lua" />
+				<testScript script="testSolverStep" file="../scripts/main.lua" TEST_MODE="RUN_IF" /> 
+				<!-- <testScript script="testSolverStep" file="../scripts/main.lua" TEST_MODE="RUN_WHILE" />  -->
+				<material name="mat_computeStep" fromLibrary="Main" dimX=0 dimY=0 />
+			</pass>
+		</pipeline>
+	</pipelines>
+
+	<!--***********************************************************************************
+		Interface
+	************************************************************************************-->
+	<interface>
+        <window label="General">
+			<var label="Reset Sim." 			type="RENDERER" context="CURRENT" component="shouldInit" 		def="min=0 max=1"/>
+			<var label="Sim. Time" 				type="RENDERER" context="CURRENT" component="simTime"/>
+			<var label="Dt" 					type="RENDERER" context="CURRENT" component="dt"/>
+            <var label="Sim. running" 			type="RENDERER" context="CURRENT" component="simRunning" 		def="min=0 max=1"/>
+			<var label="Show water" 			type="RENDERER" context="CURRENT" component="waterEnabled" 		def="min=0 max=1"/>
+			<var label="Show terrain" 			type="RENDERER" context="CURRENT" component="terrainEnabled" 	def="min=0 max=1"/>
+			<var label="Show box" 				type="RENDERER" context="CURRENT" component="boxEnabled" 		def="min=0 max=1"/>
+			<var label="Show skybox" 			type="RENDERER" context="CURRENT" component="skyboxEnabled" 	def="min=0 max=1"/>
+			
+			<var label="Terrain reflections" 	type="RENDERER" context="CURRENT" component="reflEnabled" 		def="min=0 max=1"/>
+			<var label="Aprox. light path" 		type="RENDERER" context="CURRENT" component="aproxLightPath" 	def="min=0 max=1"/>
+
+			<var label="Fresnel epsilon" 		type="RENDERER" context="CURRENT" component="fresnelEpsilon" 	def="min=0 max=1"/>
+
+			<var label="Show terrain caustics" 	type="RENDERER" context="CURRENT" component="terrainCausticsEnabled" 	def="min=0 max=1"/>
+
+			<var label="Mode" 					type="RENDERER" context="CURRENT" component="renderMode" 		strings="All,EnvReflection,SunReflection,Transmission,Refraction,Transmittance,Scattering,Flat"/>	
+
+			<var label="Light Dir" 				type="LIGHT" 	context="Sun" 	component="DIRECTION" 			def="min=-1 max=1"/>
+
+			<var label="Epsilon" 				type="RENDERER" context="CURRENT" component="epsilon" 			def="min=0.0 max=1 "/>
+			<var label="Max speed" 				type="RENDERER" context="CURRENT" component="maxSpeedSolver" 	def="min=0.0 max=10"/>
+
+			<var label="TEST " 					type="RENDERER" context="CURRENT" component="test" 				def="min=0 max=30" />
+        </window>
+		<window label="Intersection">
+			<var label="Mode" 					type="RENDERER" context="CURRENT" component="intersectionMode" 	strings="MaxMipmap,Linear+Binary" />
+            <var label="Linear aprox." 			type="RENDERER" context="CURRENT" component="linearAprox" 		def="min=0 max=1" />
+			<var label="Finest level" 			type="RENDERER" context="CURRENT" component="finestLevel" 		def="min=0 max=8" />
+			<var label="Linear Steps" 			type="RENDERER" context="CURRENT" component="linearSteps" 		def="min=1 max=100" />
+			<var label="Refine Steps" 			type="RENDERER" context="CURRENT" component="refineSteps" 		def="min=0 max=8" />
+		</window>
+		<window label="Geometry">
+            <var label="Depth Threshold" 		type="RENDERER" context="CURRENT" component="threshold" 		def="min=0.0 max=1"/>
+			<var label="WetDry Fix" 			type="RENDERER" context="CURRENT" component="wetDryFix" 		def="min=0   max=1"/>
+		</window>
+		<window label="Water Properties">
+			<var label="Water IOR" 				type="RENDERER" context="CURRENT" component="nWater" 			def="min=1.0 max=2"/>
+			<var label="Absorption Coef" 		type="RENDERER" context="CURRENT" component="absorptionCoef"	/>
+			<var label="Absorption Coef Mult" 	type="RENDERER" context="CURRENT" component="concAbsorb" 		def="min=0 max=10"/>
+			<var label="Scattering Diffuse" 	type="RENDERER" context="CURRENT" component="scatterDiffuse" />
+			<var label="Scattering Coef Mult" 	type="RENDERER" context="CURRENT" component="concScatter" 		def="min=0 max=2"/>
+			<var label="Roughness" 				type="RENDERER" context="CURRENT" component="roughness" 		def="min=0.001 max=1"/>
+		</window>
+		<window label="Noise Normal Map">
+			<var label="Mode" 				type="RENDERER" context="CURRENT" component="noiseMode" 			strings="disabled,perlin,cellular"/>
+			<var label="Octaves" 			type="RENDERER" context="CURRENT" component="noiseOctaves" 			def="min=1 max=8"/>
+			<var label="Speed" 				type="RENDERER" context="CURRENT" component="noiseSpeed" 			def="min=0 max=3"/>
+			<var label="Base Amplitude" 	type="RENDERER" context="CURRENT" component="noiseBaseAmplitude" 	def="min=0.01 max=5"/>
+			<var label="Base Frequency" 	type="RENDERER" context="CURRENT" component="noiseBaseFrequency" 	def="min=0.1 max=20"/>
+			<var label="Gain" 				type="RENDERER" context="CURRENT" component="noiseGain" 			def="min=0.5 max=1.5"/>
+			<var label="Lacunarity" 		type="RENDERER" context="CURRENT" component="noiseRoughness" 		def="min=1 max=4"/>
+			<var label="Speed Gain" 		type="RENDERER" context="CURRENT" component="noiseSpeedGain" 		def="min=0.5 max=2"/>
+			<var label="Warping" 			type="RENDERER" context="CURRENT" component="noiseWarping" 			def="min=0 max=0.05"/>
+			<var label="Perlin Share" 		type="RENDERER" context="CURRENT" component="noisePerlinShare" 		def="min=0 max=1"/>
+			<var label="Wind Enabled" 		type="RENDERER" context="CURRENT" component="noiseWindEnabled" 		def="min=0 max=1"/>
+			<var label="Squared" 			type="RENDERER" context="CURRENT" component="noiseSquared" 			def="min=0 max=1"/>
+		</window>
+		<window label="Initial data">
+			<var label="Low depth" 		   	type="RENDERER"  context="CURRENT" component="lowDepth" />
+			<var label="High depth"   		type="RENDERER"  context="CURRENT" component="highDepth"   />
+			<var label="High/Low Ratio" 	type="RENDERER"  context="CURRENT" component="highRatio"  	def="min=0 max=1"  />
+			<var label="Mode"	 			type="RENDERER"	 context="CURRENT" component="depthMode" 	strings="X wave,Middle Box,Y Wave,Ramp,Convex,Concave,Bubble,Flat" />
+		</window>
+		<window label="Caustics">
+			<var label="Enabled" 					type="RENDERER" context="CURRENT" component="causticsEnabled" 		def="min=0 max=1"/>
+			<var label="Intersection iterations" 	type="RENDERER" context="CURRENT" component="causticsIters" 		def="min=1 max=15"/>
+			<var label="Error Delta Threshold" 		type="RENDERER" context="CURRENT" component="cErrorDeltaThreshold" 	def="min=0.001 max=0.1"/>
+		</window>
+	</interface>
+
+</project>

@@ -1,0 +1,45 @@
+#version 460
+
+
+layout(binding = 0) uniform sampler2D initBat;
+layout(r32f, binding = 1) uniform writeonly image2D bathymetry;
+
+
+uniform uint nWidth;
+uniform uint nHeight;
+
+const int bcCount = 4;
+
+uniform int terrainMode;
+uniform float terrainMult;
+
+layout (local_size_x = 1) in;
+
+// fills bathymetry texture with modified heightmap texture
+void main()
+{
+    float rows = float(nWidth + bcCount * 2);
+    float cols = float(nHeight + bcCount * 2);
+    for(int i = 0; i < nWidth + 2 * bcCount; i++){
+        for(int j = 0; j < nHeight + 2 * bcCount; j++){
+            vec2 ij = vec2( (i - bcCount) / rows, (j - bcCount) / cols );
+            ij.y = 1 - ij.y;
+            vec4 b = vec4(1);
+
+            if(terrainMode == 0) { // standard
+                b.r = 0.1 + texture(initBat, ij).r * terrainMult;
+            } 
+            else if(terrainMode == 1) { // ramp
+                b.r = texture(initBat, ij).r * 7 + 10 * float(i) / nWidth;
+            }
+            else if(terrainMode == 2) { 
+                b.r = texture(initBat, ij).r + 12 * float(i) / nWidth;
+                // b.r = 1 + 0.5 * sin(2*x) * cos(2*y);
+            } else if(terrainMode == 3) { // equal over z
+                b.r = 0.1 + texture(initBat, vec2(ij.x, 0.5)).r  * terrainMult;
+            }
+
+            imageStore(bathymetry, ivec2(i, j), b);
+        }
+    }
+}

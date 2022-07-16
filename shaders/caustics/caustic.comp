@@ -1,0 +1,314 @@
+#version 430
+
+layout(binding = 0) uniform sampler2D normalAndHeight;
+layout(binding = 1) uniform sampler2D normalMapNoise; 
+layout(binding = 2) uniform sampler2D bathymetry;
+
+layout(std430, binding = 0) buffer Attribute
+{
+    vec4 attributes[];
+};
+
+// width and height of the global inner domain region
+uniform uint nWidth; 
+uniform uint nHeight;
+
+// boundary cells count
+const int cBcCount = 1; // caustics simulation boundary cells (this kernel)
+const int bcCount = 4; // shallow water simulation boundary cells
+
+// simulation constants
+uniform float dx;
+
+// rendering constants
+uniform float waterIor = 1.333;
+const float eta = 1 / waterIor; // relative ior -> nAir / nWater
+uniform	vec3 lightDir;
+
+// grid density multiplier
+uniform float nDensity;
+
+// 0 if no normal map
+uniform int noiseMode;
+
+// must match main.lua 
+#define THREADS_X 12
+#define THREADS_Y 12
+layout(local_size_x = THREADS_X, local_size_y = THREADS_Y) in;
+
+// shared memory
+shared vec4 f4GSM[THREADS_X][THREADS_Y]; 
+// (original height, hit point position) 
+// (pre upper, pre lower, pos upper, pos lower) <- triangle areas
+
+
+//uniform float test;
+
+// intersection algorithm
+uniform int intersectIters;
+// uniform float eDeltaThreshold;
+
+// intersect with plane y=0
+vec3 estimateIntersectionFlat(vec3 p0, vec3 r) {
+
+    float dist = -p0.y / r.y;
+    return p0 + dist * r;
+}
+
+vec2 worldToTexData(vec2 p) { 
+   return vec2(p.x / nWidth / dx,
+               p.y / nHeight / dx); 
+}
+
+vec2 fullToInnerTex(vec2 texCoords) {
+	return vec2((texCoords.x * nWidth + bcCount) / (nWidth + 2 * bcCount),
+                (texCoords.y * nHeight + bcCount) / (nHeight + 2 * bcCount)); 
+}
+
+// p0 -> initial position
+// r -> refracted light dir 
+vec3 estimateIntersectionTop(vec3 p0, vec3 r) {
+
+    vec3 p = p0;
+    float d;
+
+    vec2 texCoord;
+    vec3 pProj;
+    float b;
+
+    for(int i = 0; i < intersectIters; i++) {
+
+        b = texture(bathymetry, worldToTexData(p.xz)).r; 
+        pProj = vec3(p.x, b, p.z);
+
+        d = distance(pProj, p0);
+        p = p0 + (r * d);
+    }
+
+    return p;
+}
+
+// p0 -> initial position
+// r -> refracted light dir 
+// error as breaking point
+/*
+vec3 estimateIntersectionTopError(vec3 p0, vec3 r) {
+
+    vec3 p = p0;
+    float d;
+    float e = 1000; // big error
+    float ePrev, eImprovement;
+
+    vec2 texCoord;
+    vec3 pProj;
+    float b;
+
+    for(int i = 0; i < intersectIters; i++) {
+
+        b = texture(bathymetry, worldToTexData(p.xz)).r; 
+        pProj = vec3(p.x, b, p.z);
+
+        d = distance(pProj, p0);
+        p = p0 + (r * d);
+
+        ePrev = e;
+        e = abs(p.y - b);
+        eImprovement = abs(ePrev - e);
+
+        if(eImprovement < eDeltaThreshold * 0.01)
+            break;
+    }
+
+    return p;
+}
+*/
+
+// each group invocation deals with (THREADS_X - 2 * cBcCount) * (THREADS_Y - 2 * cBcCount) amount of internal data
+void main() {
+
+    // each thread (i; j) matches a vertex in the caustics grid
+    // each thread group has a single-cell boundary layer
+
+    ivec3 groupID = ivec3(gl_WorkGroupID);
+	ivec3 threadID = ivec3(gl_LocalInvocationID);
+
+    // grid inner domain index
+    int i_grid = groupID.x * (THREADS_X - 2 * cBcCount) + threadID.x - cBcCount;
+    int j_grid = groupID.y * (THREADS_Y - 2 * cBcCount) + threadID.y - cBcCount;
+
+	// shorthand for the local index
+	int i = threadID.x;
+	int j = threadID.y;
+
+    vec3 lDir = normalize(lightDir);
+
+    // -----------------------------------------------------------------------
+    // Initial Vertex Position
+
+    // grid size (nDensity = 2 -> 4 time denser grid)
+    int cWidth = int(nWidth * nDensity);
+    int cHeight = int(nHeight * nDensity);
+
+    // new grid spacing in world pos
+    vec2 betaDx = vec2(float(nWidth - 1) / (cWidth - 1),
+                       float(nHeight - 1) / (cHeight - 1)) * dx;
+
+    // [0, 1]
+    vec2 texCoords = vec2(float(i_grid)  / cWidth, 
+                          float(j_grid)  / cHeight);
+
+    // adjusts domain to consider only sim data inner domain (skips boundary cells)
+    texCoords = fullToInnerTex(texCoords);
+    
+	// load the simulation data for the previous timestep
+    float height = texture(normalAndHeight, texCoords, 0).w;
+    vec3 normal = normalize(texture(normalAndHeight, texCoords, 0).xyz);
+
+    // apply normal map perturbations
+    if(noiseMode != 0) {
+        vec3 tan1 = cross(normal, vec3(0,1,0));
+        vec3 tan2 = cross(normal, vec3(0,0,1));
+
+        vec3 tangent = length(tan1) > length(tan2) ? tan1 : tan2;
+        tangent = normalize(tangent);
+                
+        vec3 bitangent = normalize(cross(normal, tangent));
+        mat3 tbn = mat3(tangent, bitangent, normal);
+
+        vec2 noiseTexCoords = texCoords;
+        vec3 normalT1 = texture(normalMapNoise, noiseTexCoords).rgb * 2 - 1;
+        normal = normalize(tbn * normalT1);
+    }
+
+    // the worldspace position of a vertex in the caustics grid location (i,j)
+    vec3 waterPos = vec3(i_grid * betaDx.x,
+                        height,
+                        j_grid * betaDx.y);
+
+    // -----------------------------------------------------------------------
+    // Post-Refraction Hit Point Detection
+
+    // compute refracted ray direction
+    vec3 refractDir = normalize(refract(lDir, normal, eta));
+
+    // estimate intersection point of refracted ray and receiver geometry
+    vec3 hitPoint = estimateIntersectionTop(waterPos, refractDir).rgb;
+    //vec3 hitPoint = estimateIntersectionTopError(waterPos, refractDir).rgb;
+
+    float pathLength = distance(waterPos, hitPoint);
+
+    // stores height and hit point position
+    f4GSM[i][j] = vec4(height, hitPoint);
+
+    // -----------------------------------------------------------------------
+    // Caustics Intensity
+
+    // -------------------------------------
+    // Surface/pre-refraction associated triangles
+
+    groupMemoryBarrier();
+    barrier();
+
+    // origin top left corner
+    // height of associated triangles points
+    // only height is necessary because the grid spacing is uniform
+    float y0 = height;
+    float y1 = f4GSM[i + 1][j    ].x;
+    float y2 = f4GSM[i    ][j + 1].x;
+    float y3 = f4GSM[i + 1][j + 1].x;
+
+    // surface normal of upper triangle
+    vec3 n1pre = vec3(betaDx.y * (y0 - y1), 
+                      betaDx.x * betaDx.y, 
+                      betaDx.x * (y2 - y0));
+
+    // surface normal of lower triangle
+    vec3 n2pre = vec3(betaDx.y * (y3 - y2), 
+                      -betaDx.x * betaDx.y, 
+                      betaDx.x * (y1 - y3));
+
+    // -------------------------------------
+    // Receiver/post-refraction associated triangles
+
+    // position of associated triangles points
+    // grid spacing is not preserved so all point positions are accessed
+    vec3 p0 = hitPoint;
+    vec3 p1 = f4GSM[i + 1][j    ].yzw;
+    vec3 p2 = f4GSM[i    ][j + 1].yzw;
+    vec3 p3 = f4GSM[i + 1][j + 1].yzw;
+
+    // surface normals
+    vec3 n1pos = cross(p1 - p0, p2 - p0);
+    vec3 n2pos = cross(p1 - p3, p2 - p3);
+
+    // light intensity -> n dot l
+    float int1 = max(dot(normalize(n1pre),-lDir), 0);
+    float int2 = max(dot(normalize(n2pre),lDir), 0);
+
+    groupMemoryBarrier();
+    barrier();
+
+    // store associated triangles area
+    f4GSM[i][j].x = length(n1pre) * int1;
+    f4GSM[i][j].y = length(n2pre) * int2;
+    f4GSM[i][j].z = length(n1pos);
+    f4GSM[i][j].w = length(n2pos);
+
+    // -------------------------------------
+    // Sum neighborhood of triangles
+
+    groupMemoryBarrier();
+    barrier();
+
+    // sum pre-refraction neighboring areas
+    float t1 = f4GSM[i - 1][j    ].x;
+    float t2 = f4GSM[i - 1][j    ].y;
+    float t3 = f4GSM[i    ][j    ].x;
+    float t4 = f4GSM[i - 1][j - 1].y;
+    float t5 = f4GSM[i    ][j - 1].x;
+    float t6 = f4GSM[i    ][j - 1].y;
+
+    float totalPreArea = t1 + t2 + t3 + t4 + t5 + t6;
+
+    // sum post-refraction neighboring areas
+    t1 = f4GSM[i - 1][j    ].z;
+    t2 = f4GSM[i - 1][j    ].w;
+    t3 = f4GSM[i    ][j    ].z;
+    t4 = f4GSM[i - 1][j - 1].w;
+    t5 = f4GSM[i    ][j - 1].z;
+    t6 = f4GSM[i    ][j - 1].w;
+
+    float totalPostArea = t1 + t2 + t3 + t4 + t5 + t6;
+
+    // intensity is ratio
+    float intensity = totalPreArea / totalPostArea;
+
+    // totalPostArea can be 0?
+    if(isinf(intensity)) {
+		intensity = 1;
+	}
+
+    // -----------------------------------------------------------------------
+    // Store results
+
+	// check if in the global inner domain
+	bool isDomainInner = (i_grid >= 0) && (i_grid < cWidth) 
+					  && (j_grid >= 0) && (j_grid < cHeight);
+
+	// check if in the inner domain of the current grid patch
+	bool isPatchInner = (i >= cBcCount) && (i < (THREADS_X - cBcCount)) 
+	                 && (j >= cBcCount) && (j < (THREADS_Y - cBcCount));
+
+	// store the result
+	if (isDomainInner && isPatchInner) {
+
+        attributes[i_grid + cWidth * j_grid] = vec4(hitPoint.x, hitPoint.z, pathLength, intensity);
+
+        // DEBUG
+        // if(true) {
+        //     attributes[i_grid + cWidth * j_grid] = vec4(hitPoint, intensity);
+        // } else {
+        //     attributes[i_grid + cWidth * j_grid] = vec4(waterPos, (waterPos.y-9) / 2);
+        // }
+	}
+}

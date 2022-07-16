@@ -1,0 +1,23 @@
+#version 430
+
+
+uniform int destMipLevel;
+uniform sampler2D srcTex;
+writeonly uniform image2D dstTex;
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+// computes level of maximum mip map from previous level
+void main() {
+	int srcMipLevel = destMipLevel - 1;
+	ivec2 dstPos = ivec2(gl_GlobalInvocationID);
+	ivec2 srcPos = dstPos * 2;
+	float srcColor0 = texelFetch(srcTex, srcPos + ivec2(0, 0), srcMipLevel).r;
+	float srcColor1 = texelFetch(srcTex, srcPos + ivec2(1, 0), srcMipLevel).r;
+	float srcColor2 = texelFetch(srcTex, srcPos + ivec2(0, 1), srcMipLevel).r;
+	float srcColor3 = texelFetch(srcTex, srcPos + ivec2(1, 1), srcMipLevel).r;
+	
+	float maxVal = max(max(srcColor0, srcColor1), max(srcColor2,srcColor3));
+
+	imageStore(dstTex, dstPos, vec4(maxVal));
+}

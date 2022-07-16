@@ -1,0 +1,97 @@
+
+#version 430
+
+layout(binding = 0) uniform sampler2D simData;
+layout(binding = 1) uniform sampler2D bathymetry;
+layout(rgba32f, binding = 2) uniform writeonly image2D results;
+
+
+// width and height of the global inner domain region
+uniform uint nWidth; 
+uniform uint nHeight;
+
+const int bcCount = 4;
+
+// packed value given to boundary cells regarding their BC copy destinations
+#define BC_WRITE_OFFSET 1.99414051f
+
+// compute related
+#define THREADS_X 32
+#define THREADS_Y 24
+layout(local_size_x = THREADS_X, local_size_y = THREADS_Y) in;
+
+
+/*
+void UnpackBCData(float src, out ivec2 offsets) {
+	// reinterpret the bit sequence as a signed integer
+	int i32 = floatBitsToInt(src);
+
+	// extract the offsets
+	offsets.x = i32 >> 16;
+	offsets.y = (i32 << 16) >> 16;
+}
+*/
+
+void UnpackBCData(float src, out ivec2 offsets) {
+    uint i32 = floatBitsToUint(src);
+    vec2 v = unpackHalf2x16(i32);
+    offsets = ivec2(v);
+}
+
+float packBCData(int offsetx, int offsety) {
+    vec2 v = vec2(offsetx, offsety);
+    uint i32 = packHalf2x16(v);
+    float bcData = uintBitsToFloat(i32);
+    return bcData;
+}
+
+
+// each group invocation deals with (THREADS_X - 2 * bcCount) * (THREADS_Y - 2 * bcCount) amount of internal data
+void main() {
+
+	ivec3 groupID = ivec3(gl_WorkGroupID);
+	ivec3 threadID = ivec3(gl_LocalInvocationID);
+
+	// define the global index
+	int i_global = groupID.x * (THREADS_X - 2 * bcCount) + threadID.x;
+	int j_global = groupID.y * (THREADS_Y - 2 * bcCount) + threadID.y;
+
+	// shorthand for the local index
+	int i = threadID.x;
+	int j = threadID.y;
+
+	// load the simulation data for the previous timestep
+	vec4 simData_n = texelFetch(simData, ivec2(i_global, j_global), 0);
+
+	vec3 U_n = simData_n.xyz;
+	float bcData = simData_n.w;
+
+	ivec2 bcOffsets;
+	UnpackBCData(bcData, bcOffsets);
+
+	float g = 0;
+	if (bcOffsets.x < 1000 || bcOffsets.y < 1000)
+		g = 1;
+	
+	vec4 U_new = vec4(U_n.x, g, 0, bcData);
+	vec3 U_off = vec3(U_n.x + 1, 0, 0);
+
+	// check if dealing with an inner domain cell
+	bool isDomainInner = (i_global >= bcCount) && (i_global < (nWidth + bcCount)) 
+					  && (j_global >= bcCount) && (j_global < (nHeight + bcCount));
+
+	// check if in the inner domain of the current grid patch
+	bool isPatchInner = (i >= bcCount) && (i < (THREADS_X - bcCount)) 
+	                 && (j >= bcCount) && (j < (THREADS_Y - bcCount));
+
+	float OFFSET = packBCData(1000, 1000);
+
+	// store the result
+	if (isDomainInner && isPatchInner) {
+		imageStore(results, ivec2(i_global, j_global), U_new);
+
+		// set the boundary conditions
+		imageStore(results, ivec2(i_global + bcOffsets.x, j_global), vec4(U_off, OFFSET));
+		imageStore(results, ivec2(i_global, j_global + bcOffsets.y), vec4(U_off, OFFSET));
+	}
+}

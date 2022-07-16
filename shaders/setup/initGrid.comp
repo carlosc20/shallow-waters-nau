@@ -1,0 +1,345 @@
+#version 460
+
+
+// grid buffers
+layout(std430, binding = 0) buffer Index
+{
+    uint indices[];
+};
+
+layout(std430, binding = 1) buffer Position
+{
+    vec4 positions[];
+};
+
+layout(std430, binding = 3) buffer Normal
+{
+    vec4 normals[];
+};
+
+// grid sides buffers
+layout(std430, binding = 6) buffer SIndex
+{
+    uint sIndices[];
+};
+
+layout(std430, binding = 7) buffer SPosition
+{
+    vec4 sPositions[];
+};
+
+layout(std430, binding = 8) buffer SNormal
+{
+    vec4 sNormals[];
+};
+
+// caustics buffers
+layout(std430, binding = 10) buffer CausticsIndex
+{
+    uint causticsIndices[];
+};
+
+// background grid buffers
+layout(std430, binding = 11) buffer BGIndex
+{
+    uint bgIndices[];
+};
+
+layout(std430, binding = 12) buffer BGPosition
+{
+    vec4 bgPositions[];
+};
+
+// box buffers
+layout(std430, binding = 13) buffer BoxIndex
+{
+    uint boxIndices[];
+};
+
+layout(std430, binding = 14) buffer BoxPosition
+{
+    vec4 boxPositions[];
+};
+
+layout(std430, binding = 15) buffer BoxNormal
+{
+    vec4 boxNormals[];
+};
+
+// grid size
+uniform uint nWidth;
+uniform uint nHeight;
+
+uniform float causticsGridDensity;
+
+layout(binding = 0) uniform sampler2D bathymetry;
+layout(rgba16f, binding = 1) uniform writeonly image2D normalTex; // bat
+
+const int bcCount = 4;
+
+
+void initBox() {
+
+    float boxHeight = 10;
+
+    int idx = 0;
+
+    // front face
+    boxPositions[idx++] = vec4(0,           boxHeight,  nHeight - 1,1);
+    boxPositions[idx++] = vec4(nWidth - 1,  boxHeight,  nHeight - 1,1);
+    boxPositions[idx++] = vec4(0,           0,          nHeight - 1,1); 
+    boxPositions[idx++] = vec4(nWidth - 1,  0,          nHeight - 1,1);
+
+    for(int i = 0; i < 4; i++) {
+        boxNormals[i] = vec4(0,0,1,1);
+    }
+
+    int s = 0;
+    int r = 0;
+    boxIndices[s++] = r;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 3;
+    r += 4;
+
+    // right face
+    boxPositions[idx++] = vec4(nWidth - 1,  boxHeight,  nHeight - 1,1);
+    boxPositions[idx++] = vec4(nWidth - 1,           boxHeight, 0,1);
+    boxPositions[idx++] = vec4(nWidth - 1,  0,          nHeight - 1,1);
+    boxPositions[idx++] = vec4(nWidth - 1,           0,          0,1); 
+    
+    for(int i = r; i < r + 4; i++) {
+        boxNormals[i] = vec4(1,0,0,1);
+    }
+
+    boxIndices[s++] = r;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 3;
+    r += 4;
+
+    // back face
+    boxPositions[idx++] = vec4(nWidth - 1,  boxHeight, 0,1);
+    boxPositions[idx++] = vec4(0,boxHeight,0,1);
+    boxPositions[idx++] = vec4(nWidth - 1,  0,         0,1); 
+    boxPositions[idx++] = vec4(0,0,0,1);
+    
+    for(int i = r; i < r + 4; i++) {
+        boxNormals[i] = vec4(0,0,-1,1);
+    }
+
+    boxIndices[s++] = r;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 3;
+    r += 4;
+
+
+    // left face
+    boxPositions[idx++] = vec4(0,boxHeight,0,1);
+    boxPositions[idx++] = vec4(0,boxHeight,nHeight - 1,1);
+    boxPositions[idx++] = vec4(0,0,0,1);
+    boxPositions[idx++] = vec4(0,0,nHeight - 1,1);
+    
+    for(int i = r; i < r + 4; i++) {
+        boxNormals[i] = vec4(-1,0,0,1);
+    }
+
+    boxIndices[s++] = r;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 1;
+    boxIndices[s++] = r + 2;
+    boxIndices[s++] = r + 3;
+}
+
+void initGridSides() {
+    
+    // attributes
+    // front z = nHeight - 1
+    int idx = 0;
+    for (uint w = 0; w < nWidth; w++) {
+
+        ivec2 icoords = ivec2(w, nHeight - 1) + bcCount;
+
+        // positions
+        float bat = texelFetch(bathymetry, icoords, 0).r;
+        sPositions[idx]   = vec4(w, bat, nHeight - 1, 0);
+        sPositions[idx + 1] = vec4(w, bat, nHeight - 1, 1);
+
+        // normals
+        sNormals[idx]   = vec4(0,0,1,0);
+        sNormals[idx + 1] = vec4(0,0,1,0);
+
+        idx += 2;
+    }
+
+    //right x = nWidth
+    for (int h = int(nHeight) - 1; h > -1; h--) {
+
+        ivec2 icoords = ivec2(nWidth, h - 1) + bcCount;
+
+        // positions
+        float bat = texelFetch(bathymetry, icoords, 0).r;
+        sPositions[idx]     = vec4(nWidth - 1, bat, h, 0);
+        sPositions[idx + 1] = vec4(nWidth - 1, bat, h, 1);
+
+        // normals
+        sNormals[idx]     = vec4(1,0,0,0);
+        sNormals[idx + 1] = vec4(1,0,0,0);
+
+        idx += 2;
+    }
+
+    // back z = 0
+    for (int w = int(nWidth) - 1; w > -1; w--) {
+
+        ivec2 icoords = ivec2(w, 0) + bcCount;
+
+        // positions
+        float bat = texelFetch(bathymetry, icoords, 0).r;
+        sPositions[idx]     = vec4(w, bat, 0, 0);
+        sPositions[idx + 1] = vec4(w, bat, 0, 1);
+
+        // normals
+        sNormals[idx]   = vec4(0,0,-1,0);
+        sNormals[idx + 1] = vec4(0,0,-1,0);
+
+        idx += 2;
+    }
+    
+    //left x = 0
+    for (int h = 0; h < int(nHeight); h++) {
+
+        ivec2 icoords = ivec2(0, h) + bcCount;
+
+        // positions
+        float bat = texelFetch(bathymetry, icoords, 0).r;
+        sPositions[idx]     = vec4(0, bat, h, 0);
+        sPositions[idx + 1] = vec4(0, bat, h, 1);
+
+        // normals
+        sNormals[idx]     = vec4(-1,0,0,0);
+        sNormals[idx + 1] = vec4(-1,0,0,0);
+
+        idx += 2;
+    }
+
+
+    // triangle strip indices
+    for (int index = 0; index < nWidth * 4 + nHeight * 4; index++) {
+        sIndices[index] = index;
+    }
+}
+
+void initCausticsIndices() {
+
+    
+    int cWidth = int(nWidth * causticsGridDensity);
+    int cHeight = int(nHeight * causticsGridDensity);
+
+    // indices
+    for (uint w = 0; w < cWidth - 1; w++) {
+        for (uint h = 0; h < cHeight - 1; h++) {
+			int index = int((h * (cWidth - 1) + w) * 6);
+			// first triangle
+			causticsIndices[index    ] = h * cWidth + w;
+			causticsIndices[index + 1] = (h + 1) * cWidth + w;
+			causticsIndices[index + 2] = (h + 1) * cWidth + w + 1;
+
+			// second triangle
+			causticsIndices[index + 3] = h * cWidth + w;
+			causticsIndices[index + 4] = (h + 1) * cWidth + w + 1;
+			causticsIndices[index + 5] = h * cWidth + w + 1;
+        }
+    }
+}
+
+void initBackgroundGrid() {
+
+    // triangle strip
+    float width = 500;
+    float height = 500;
+
+    bgPositions[0] = vec4(-width ,0, -height, 1);
+    bgPositions[2] = vec4(width * 2 ,0, -height, 1);
+    bgPositions[1] = vec4(-width ,0, height * 2, 1);
+    bgPositions[3] = vec4(width * 2 ,0, height * 2, 1);
+
+    for(int i = 0; i < 4; i++) {
+        bgIndices[i] = i;
+    }
+}
+
+void initGrid() {
+
+    // atributes
+    float h1, h2;
+    for (uint w = 0; w < nWidth; w++) {
+        for (uint h = 0; h < nHeight; h++) {
+            int index = int(h * nWidth + w);
+
+            ivec2 icoords = ivec2(w, h) + bcCount;
+
+            // positions
+            float bHeight = texelFetch(bathymetry, icoords, 0).r;
+            positions[index] = vec4(w, bHeight, h, 1);
+            
+            // boundary normals
+            if (w == 0 || w == nWidth - 1) {
+                h1 = 0;
+            } else {
+                h1 = texelFetch(bathymetry, icoords + ivec2(1, 0), 0).r  - texelFetch(bathymetry, icoords + ivec2(-1, 0), 0).r;
+            }
+            
+			if (h == 0 || h == nHeight - 1) {
+                h2 = 0;
+            } else {
+                h2 = texelFetch(bathymetry, icoords + ivec2(0, 1), 0).r - texelFetch(bathymetry, icoords + ivec2(0, -1), 0).r;
+            }
+				
+
+            // normals
+            vec4 normal = normalize(vec4(-h1, 2, -h2, 0));
+            normals[index] = normal;
+            imageStore(normalTex, ivec2(w, h), normal);
+        }
+    }
+
+    // indices
+    for (uint w = 0; w < nWidth - 1; w++) {
+        for (uint h = 0; h < nHeight - 1; h++) {
+			int index = int((h * (nWidth - 1) + w) * 6);
+			// first triangle
+			indices[index] = h * nWidth + w;
+			indices[index + 1] = (h + 1) * nWidth + w;
+			indices[index + 2] = (h + 1) * nWidth + w + 1;
+
+			// second triangle
+			indices[index + 3] = h * nWidth + w;
+			indices[index + 4] = (h + 1) * nWidth + w + 1;
+			indices[index + 5] = h * nWidth + w + 1;
+        }
+    }
+}
+
+layout (local_size_x = 1) in;
+void main()
+{
+    
+    initGrid();
+
+    initGridSides();
+
+    initCausticsIndices();
+
+    initBackgroundGrid();
+
+    initBox();
+}

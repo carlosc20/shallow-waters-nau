@@ -1,0 +1,640 @@
+/*
+Implementation of:
+"GPU Driven Finite Difference WENO Scheme for Real Time Solution of the Shallow Water Equations" by P. Parna, K. Meyer, R. Falconer
+Uses 3rd order WENO without characteristics projections
+*/
+#version 430
+
+layout(binding = 0) uniform sampler2D bathymetry;
+layout(binding = 1) uniform sampler2D simData1;
+layout(binding = 2) uniform sampler2D simData2;
+layout(rgba32f, binding = 3) uniform writeonly image2D results1;
+layout(rgba32f, binding = 4) uniform writeonly image2D results2;
+layout(rgba32f, binding = 5) uniform writeonly image2D resultsAux;
+
+// uniform float test;
+
+// if activeTex == 1 -> simData1 is input tex
+uniform int activeTex;
+
+// width and height of the global inner domain region
+uniform uint nWidth; 
+uniform uint nHeight;
+
+// simulation constants
+uniform float dx;
+const float dy = dx;
+uniform float dt;
+const float g = 9.81;
+const float epsilon = dx * dx;
+uniform float dEpsilon = 0.01;
+uniform float maxSpeed;
+
+// source term derivatives decomposed
+#define SRC1(b) (0.5 * g * b*b)
+#define SRC2(b) (b)
+
+// boundary cells per side
+const int bcCount = 4;
+
+// must match lua script
+#define THREADS_X 32
+#define THREADS_Y 20
+// GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS = 1536 = 32 * 48 -> max threads per group 
+
+layout(local_size_x = THREADS_X, local_size_y = THREADS_Y) in;
+
+// shared memory
+shared float f1GSM0[THREADS_Y][THREADS_X];
+shared vec3 f3GSM1[THREADS_Y][THREADS_X];
+shared vec3 f3GSM2[THREADS_Y][THREADS_X];
+shared vec3 f3GSM3[THREADS_Y][THREADS_X];
+
+
+// -----------------------------------------------
+// WENO reconstruction
+void WENO3PlusX(vec3 v_im1, vec3 v_i, vec3 v_ip1,
+				float b_im1, float b_i, float b_ip1,
+				out vec3 flux, out float s2) {
+
+	// find the smoothness indicators
+	vec3 b0 = (v_ip1 - v_i) * (v_ip1 - v_i);
+	vec3 b1 = (v_i - v_im1) * (v_i - v_im1);
+
+	// flux absorbs first source term
+	v_im1.y -= 0.5 * SRC1(b_im1);
+	v_i.y   -= 0.5 * SRC1(b_i);
+	v_ip1.y -= 0.5 * SRC1(b_ip1);
+
+	// find the small stencil approximations
+	vec3 f0 = 0.5 * v_i + 0.5 * v_ip1;
+	vec3 f1 = -0.5 * v_im1 + 1.5 * v_i;
+
+	// define the linear weights
+	float d0 = 2.0 / 3.0;
+	float d1 = 1.0 / 3.0;
+
+	// find the non-linear weights
+	vec3 z0 = d0 / ((epsilon + b0) * (epsilon + b0));
+	vec3 z1 = d1 / ((epsilon + b1) * (epsilon + b1));
+
+	vec3 w0 = z0 / (z0 + z1);
+
+	flux = mix(f1, f0, w0);
+
+	// find the small stencil approximations
+	float S2_0 = 0.5 * SRC2(b_i) + 0.5 * SRC2(b_ip1);
+	float S2_1 = -0.5 * SRC2(b_im1) + 1.5 * SRC2(b_i);
+	
+	// uses same non-linear weights as the flux
+	s2 = mix(S2_1, S2_0, w0.y);
+}
+
+void WENO3MinusX(vec3 v_i, vec3 v_ip1, vec3 v_ip2,
+				 float b_i, float b_ip1, float b_ip2,
+				 out vec3 flux, out float s2) {
+
+	// find the smoothness indicators
+	vec3 b0 = (v_ip1 - v_i) * (v_ip1 - v_i);
+	vec3 b1 = (v_ip2 - v_ip1) * (v_ip2 - v_ip1);
+
+	v_i.y   -= 0.5 * SRC1(b_i);
+	v_ip1.y -= 0.5 * SRC1(b_ip1);
+	v_ip2.y -= 0.5 * SRC1(b_ip2);
+
+	// find the small stencil approximations
+	vec3 f0 = 0.5 * v_ip1 + 0.5 * v_i;
+	vec3 f1 = -0.5 * v_ip2 + 1.5 * v_ip1;
+
+	float S2_0 = 0.5 * SRC2(b_ip1) + 0.5 * SRC2(b_i);
+	float S2_1 = -0.5 * SRC2(b_ip2) + 1.5 * SRC2(b_ip1);
+
+	// define the linear weights
+	float d0 = 2.0 / 3.0;
+	float d1 = 1.0 / 3.0;
+
+	// find the non-linear weights
+	vec3 a0 = d0 / ((epsilon + b0) * (epsilon + b0));
+	vec3 a1 = d1 / ((epsilon + b1) * (epsilon + b1));
+
+	vec3 aSum = a0 + a1;
+
+	vec3 w0 = a0 / aSum;
+	vec3 w1 = a1 / aSum;
+
+	flux = w0 * f0 + w1 * f1;
+	s2 = w0.y * S2_0 + w1.y * S2_1;
+}
+
+void WENO3PlusY(vec3 v_im1, vec3 v_i, vec3 v_ip1,
+				float b_im1, float b_i, float b_ip1,
+				out vec3 flux, out float s2) {
+
+	// find the smoothness indicators
+	vec3 b0 = (v_ip1 - v_i) * (v_ip1 - v_i);
+	vec3 b1 = (v_i - v_im1) * (v_i - v_im1);
+
+	v_im1.z -= 0.5 * SRC1(b_im1);
+	v_i.z   -= 0.5 * SRC1(b_i);
+	v_ip1.z -= 0.5 * SRC1(b_ip1);
+
+	// find the small stencil approximations
+	vec3 f0 = 0.5 * v_i + 0.5 * v_ip1;
+	vec3 f1 = -0.5 * v_im1 + 1.5 * v_i;
+
+	float S2_0 = 0.5 * SRC2(b_i) + 0.5 * SRC2(b_ip1);
+	float S2_1 = -0.5 * SRC2(b_im1) + 1.5 * SRC2(b_i);
+
+	// define the linear weights
+	float d0 = 2.0 / 3.0;
+	float d1 = 1.0 / 3.0;
+
+	// find the non-linear weights
+	vec3 a0 = d0 / ((epsilon + b0) * (epsilon + b0));
+	vec3 a1 = d1 / ((epsilon + b1) * (epsilon + b1));
+
+	vec3 aSum = a0 + a1;
+
+	vec3 w0 = a0 / aSum;
+	vec3 w1 = a1 / aSum;
+
+	flux = w0 * f0 + w1 * f1;
+	s2 = w0.z * S2_0 + w1.z * S2_1;
+}
+
+void WENO3MinusY(vec3 v_i, vec3 v_ip1, vec3 v_ip2,
+				 float b_i, float b_ip1, float b_ip2,
+				 out vec3 flux, out float s2) {
+
+	// find the smoothness indicators
+	vec3 b0 = (v_ip1 - v_i) * (v_ip1 - v_i);
+	vec3 b1 = (v_ip2 - v_ip1) * (v_ip2 - v_ip1);
+
+	v_i.z   -= 0.5 * SRC1(b_i);
+	v_ip1.z -= 0.5 * SRC1(b_ip1);
+	v_ip2.z -= 0.5 * SRC1(b_ip2);
+
+	// find the small stencil approximations
+	vec3 f0 = 0.5 * v_ip1 + 0.5 * v_i;
+	vec3 f1 = -0.5 * v_ip2 + 1.5 * v_ip1;
+
+	float S2_0 = 0.5 * SRC2(b_ip1) + 0.5 * SRC2(b_i);
+	float S2_1 = -0.5 * SRC2(b_ip2) + 1.5 * SRC2(b_ip1);
+
+	// define the linear weights
+	float d0 = 2.0 / 3.0;
+	float d1 = 1.0 / 3.0;
+
+	// find the non-linear weights
+	vec3 a0 = d0 / ((epsilon + b0) * (epsilon + b0));
+	vec3 a1 = d1 / ((epsilon + b1) * (epsilon + b1));
+
+	vec3 aSum = a0 + a1;
+
+	vec3 w0 = a0 / aSum;
+	vec3 w1 = a1 / aSum;
+
+	flux = w0 * f0 + w1 * f1;
+	s2 = w0.z * S2_0 + w1.z * S2_1;
+}
+
+void WENO3X(float alpha_x,
+			vec3 F_im1, vec3 F_i, vec3 F_ip1, vec3 F_ip2,
+			vec3 U_im1, vec3 U_i, vec3 U_ip1, vec3 U_ip2,
+			float b_im1, float b_i, float b_ip1, float b_ip2,
+			out vec3 F_hat, out float b_hat_x) {
+
+	// do the flux splitting for f_plus, stencil: i-1, i, i+1
+	vec3 f_plus_x_im1_j = 0.5 * (F_im1 + alpha_x * U_im1);
+	vec3 f_plus_x_i_j =   0.5 * (F_i   + alpha_x * U_i  );
+	vec3 f_plus_x_ip1_j = 0.5 * (F_ip1 + alpha_x * U_ip1);
+
+	// reconstruction output
+	vec3 f_plus_x;
+	float b_plus_x;
+
+	// do the reconstruction
+	WENO3PlusX(f_plus_x_im1_j, f_plus_x_i_j, f_plus_x_ip1_j,
+			   b_im1, b_i, b_ip1,
+			   f_plus_x, b_plus_x);
+
+	// do the flux splitting for f_minus, stencil: i, i+1, i+2
+	vec3 f_minus_x_i_j   = 0.5 * (F_i	- alpha_x * U_i	 );
+	vec3 f_minus_x_ip1_j = 0.5 * (F_ip1 - alpha_x * U_ip1);
+	vec3 f_minus_x_ip2_j = 0.5 * (F_ip2 - alpha_x * U_ip2);
+
+	// reconstruction output
+	vec3 f_minus_x;
+	float b_minus_x;
+
+	// do the reconstruction
+	WENO3MinusX(f_minus_x_i_j, f_minus_x_ip1_j, f_minus_x_ip2_j,
+				b_i, b_ip1, b_ip2,
+				f_minus_x, b_minus_x);
+
+
+	// final output at i+1/2,j
+	F_hat = f_plus_x + f_minus_x;
+	b_hat_x = 0.5 * b_plus_x + 0.5 * b_minus_x;
+}
+
+void WENO3Y(float alpha_y,
+			vec3 G_jm1, vec3 G_j, vec3 G_jp1, vec3 G_jp2,
+			vec3 U_jm1, vec3 U_j, vec3 U_jp1, vec3 U_jp2,
+			float b_jm1, float b_j, float b_jp1, float b_jp2,
+			out vec3 G_hat, out float b_hat_y) {
+
+	// do the flux splitting for f_plus, stencil: j-1, j, j+1
+	vec3 f_plus_y_jm1 = 0.5 * (G_jm1 + alpha_y * U_jm1);
+	vec3 f_plus_y_j   = 0.5 * (G_j   + alpha_y * U_j  );
+	vec3 f_plus_y_jp1 = 0.5 * (G_jp1 + alpha_y * U_jp1);
+
+	// reconstruction output
+	vec3 f_plus_y;
+	float b_plus_y;
+
+	// do the reconstruction
+	WENO3PlusY(f_plus_y_jm1, f_plus_y_j, f_plus_y_jp1,
+			   b_jm1, b_j, b_jp1,
+			   f_plus_y, b_plus_y);
+
+	// do the flux splitting for f_minus, stencil: j, j+1, j+2
+	vec3 f_minus_y_j   = 0.5 * (G_j	  - alpha_y * U_j  );
+	vec3 f_minus_y_jp1 = 0.5 * (G_jp1 - alpha_y * U_jp1);
+	vec3 f_minus_y_jp2 = 0.5 * (G_jp2 - alpha_y * U_jp2);
+
+	// reconstruction output
+	vec3 f_minus_y;
+	float b_minus_y;
+
+	// do the reconstruction
+	WENO3MinusY(f_minus_y_j, f_minus_y_jp1, f_minus_y_jp2,
+				b_j, b_jp1, b_jp2,
+				f_minus_y, b_minus_y);
+
+
+	// final output at i,j+1/2
+	G_hat = f_plus_y + f_minus_y;
+	b_hat_y = 0.5 * b_plus_y + 0.5 * b_minus_y;
+}
+
+// -----------------------------------------------
+// packing and unpacking of boundary offsets
+ivec2 unpackBCData(float bcData) {
+    uint i32 = floatBitsToUint(bcData);
+    return ivec2(unpackHalf2x16(i32));
+}
+
+float packBCData(ivec2 offsets) {
+    uint i32 = packHalf2x16(vec2(offsets));
+    return uintBitsToFloat(i32);
+}
+
+// -----------------------------------------------
+
+// velocity desingularization
+void desingularize(inout vec3 U) {
+
+	float h4 = U.x * U.x;
+	h4 *= h4;
+
+	// clamp due to possible roun-off errors
+	U.x = max(0.0, U.x);
+
+	// desingularize the velocities if needed
+	U.y = (U.x < dEpsilon) 
+					? U.x * (sqrt(2.0) * U.x * U.y / sqrt((h4 + max(h4, dEpsilon))))
+					: U.y;
+
+	U.z = (U.x < dEpsilon) 
+					? U.x * (sqrt(2.0) * U.x * U.z / sqrt((h4 + max(h4, dEpsilon))))
+					: U.z;
+}
+
+// Lambda bounding values
+vec4 boundingValues(vec4 Fcomp, float Gamma) {
+	// Fcomp -> iph_j, imh_j, i_jph, i_jmh
+	// Fneg -> alpha, beta, gamma, delta
+
+	ivec4 Fneg = ivec4(lessThan(Fcomp, vec4(0)));
+	float R = dot(Fcomp, Fneg);
+	float Q = min(1, (R != 0) ? Gamma / R : 0.0);
+	
+	// Lambda -> R, L, U, D
+	return mix(vec4(1), vec4(Q), Fneg); 
+}
+
+vec4 boundingValuesSeparate(vec4 Fcomp, float Gamma) {
+	// Fcomp.xyzw -> iph_j, imh_j, i_jph, i_jmh
+
+	int alpha = int(Fcomp.x < 0);
+	int beta = int(Fcomp.y < 0);
+	int gamma = int(Fcomp.z < 0);
+	int delta = int(Fcomp.w < 0);
+	float R = (alpha * Fcomp.x + beta * Fcomp.y + gamma * Fcomp.z + delta * Fcomp.w);
+	float Q = min(1, (R != 0) ? Gamma / R : 0.0);
+
+	float L_r = (1 - alpha) + alpha * Q;
+	float L_l = (1 - beta) + beta * Q;
+	float L_u = (1 - gamma) + gamma * Q;
+	float L_d = (1 - delta) + delta * Q;
+
+	return vec4(L_r, L_l, L_u, L_d);
+}
+
+
+vec4 loadSimulationData(ivec2 globalIdx) {
+	if(activeTex == 1) {
+		return texelFetch(simData1, globalIdx, 0);
+	} else {
+		return texelFetch(simData2, globalIdx, 0);
+	}
+}
+
+void storeResults(ivec2 globalIdx, vec4 normalAndHeight, vec3 U_new, float bcData, ivec2 bcOffsets) {
+
+	const float offset = packBCData(ivec2(1000, 1000));
+
+	// boundary condition vector:
+	// no-stick -> the velocity in the normal direction should be zero at the boundaries
+	const vec3 boundaryVecX = vec3(1, -1, 1);
+	const vec3 boundaryVecY = vec3(1, 1, -1);
+
+	// no-slip -> the velocity in the normal and tangential directions should be zero at the boundaries
+	// const vec3 boundaryVecX = vec3(1, -1, -1); 
+	// const vec3 boundaryVecY = vec3(1, -1, -1);
+
+	// store normal and height
+	imageStore(resultsAux, globalIdx, normalAndHeight);
+
+	if(activeTex == 1) {
+		imageStore(results2, globalIdx, vec4(U_new, bcData));
+
+		// set the boundary conditions
+		imageStore(results2, globalIdx + ivec2(bcOffsets.x, 0), vec4(U_new * boundaryVecX, offset));
+		imageStore(results2, globalIdx + ivec2(0, bcOffsets.y), vec4(U_new * boundaryVecY, offset));
+
+	} else {
+		imageStore(results1, globalIdx, vec4(U_new, bcData));
+
+		// set the boundary conditions
+		imageStore(results1, globalIdx + ivec2(bcOffsets.x, 0), vec4(U_new * boundaryVecX, offset));
+		imageStore(results1, globalIdx + ivec2(0, bcOffsets.y), vec4(U_new * boundaryVecY, offset));
+	}
+}
+
+
+
+// each group invocation deals with (THREADS_X - 2 * bcCount) * (THREADS_Y - 2 * bcCount) inner domain cells
+void main() {
+	// =========================== DEFINE INDICES AND LOAD DATA =========================== //
+
+	ivec3 groupID = ivec3(gl_WorkGroupID);
+	ivec3 threadID = ivec3(gl_LocalInvocationID);
+
+	// shorthand for the local index
+	int i = threadID.x;
+	int j = threadID.y;
+
+	// define the global index
+	ivec2 globalIdx = ivec2(groupID.x * (THREADS_X - 2 * bcCount) + i,
+							groupID.y * (THREADS_Y - 2 * bcCount) + j);
+
+	// load the simulation data for the previous timestep
+	vec4 simData_n = loadSimulationData(globalIdx);
+
+	// xyzw -> h, hu, hv, bcData
+	vec3 U_n = simData_n.xyz;
+	float bcData = simData_n.w;
+	ivec2 bcOffsets = unpackBCData(bcData);
+
+	desingularize(U_n);
+
+	float b = texelFetch(bathymetry, globalIdx, 0).r;
+	float h = U_n.x;
+	float u = (h != 0.0) ? U_n.y / h : 0.0;
+	float v = (h != 0.0) ? U_n.z / h : 0.0;
+
+	// clamp to max speed
+	u = clamp(u, -maxSpeed, maxSpeed);
+	v = clamp(v, -maxSpeed, maxSpeed);
+
+
+	// =========================== COMPUTE FLUXES, ALPHA AND LOW ORDER LF FLUXES =========================== //
+
+	// compute fluxes
+	vec3 F = vec3(h * u, 
+				  h * u*u + g * h*h / 2.0, 
+				  h * u * v);  
+	vec3 G = vec3(h * v, 
+				  h * u * v, 
+				  h * v*v + g * h*h / 2.0);
+
+	// compute maximum eigenvalues of the flux Jacobians
+	// eigenvalues are: u, u + sqrt(g * h), u - sqrt(g * h)
+	float maxEigen_x = abs(u) + sqrt(g * h);
+	float maxEigen_y = abs(v) + sqrt(g * h);
+
+	// store b, F and G, h and maximum eigenvalues
+	f1GSM0[j][i] = b;
+	f3GSM2[j][i] = F;
+	f3GSM3[j][i] = G;
+	f3GSM1[j][i] = vec3(h, maxEigen_x, maxEigen_y);
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// compute alpha for the local LF flux splitting -> max eigenvalue in stencil
+	float alpha_x = -10000;
+	float alpha_y = -10000;
+	for (int k = -1; k <= 2; k++) {
+		alpha_x = max(alpha_x, f3GSM1[j][i + k].y);
+		alpha_y = max(alpha_y, f3GSM1[j + k][i].z);
+	} 
+	
+	// compute low-order positivity preserving LF fluxes
+	float f_tilde = 0.5 * (F.x + f3GSM2[j][i + 1].x - alpha_x * (f3GSM1[j][i + 1].x - h));
+	float g_tilde = 0.5 * (G.x + f3GSM3[j + 1][i].x - alpha_y * (f3GSM1[j + 1][i].x - h));
+
+
+	// =========================== COMPUTE TIME-AVERAGED FLUXES AND GAMMA =========================== //
+
+	// compute 2nd order flux derivatives using central differences
+	vec3 dF_dx = (1.0 / (2.0 * dx)) * (f3GSM2[j][i + 1] - f3GSM2[j][i - 1]);
+	vec3 dG_dy = (1.0 / (2.0 * dy)) * (f3GSM3[j + 1][i] - f3GSM3[j - 1][i]);
+
+	// compute 2nd order source term using central differences
+	vec3 S = vec3(0.0,
+						(1.0 / (2.0 * dx)) * (SRC1(f1GSM0[j][i + 1]) - SRC1(f1GSM0[j][i - 1]))
+		- g * (h + b) * (1.0 / (2.0 * dx)) * (SRC2(f1GSM0[j][i + 1]) - SRC2(f1GSM0[j][i - 1])),
+						(1.0 / (2.0 * dy)) * (SRC1(f1GSM0[j + 1][i]) - SRC1(f1GSM0[j - 1][i]))
+		- g * (h + b) * (1.0 / (2.0 * dy)) * (SRC2(f1GSM0[j + 1][i]) - SRC2(f1GSM0[j - 1][i])));
+
+	// compute flux Jacobian matrices
+	mat3 dF_dU = mat3(0.0, 			1.0, 		0.0,
+					-u * u + g * h, 2.0 * u,	0.0,
+					-u * v, 		v, 			u);
+	mat3 dG_dU = mat3(0.0, 			0.0, 		1.0,
+					-u * v, 		v, 			u,
+					-v * v + g * h, 0.0, 		2.0 * v);
+	
+	// compute time-averaged fluxes
+	vec3 F_tilde = F + (dt / 2.0) * (S - dF_dx - dG_dy) * dF_dU;
+	vec3 G_tilde = G + (dt / 2.0) * (S - dF_dx - dG_dy) * dG_dU;
+
+
+	// store low order flux in x- and y-directions
+	f3GSM1[j][i].xy = vec2(f_tilde, g_tilde);
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// compute Gamma for positivity preservation
+	float Gamma = -(h - (dt / dx) * (f_tilde - f3GSM1[j][i - 1].x) - (dt / dy) * (g_tilde - f3GSM1[j - 1][i].y));
+
+	// =========================== WENO RECONSTRUCTION IN X-DIRECTION =========================== //
+
+	// store F_tilde and conserved quantities
+	f3GSM2[j][i] = F_tilde;
+	f3GSM3[j][i] = vec3(h + b, U_n.y, U_n.z);
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	const vec3 boundaryVecFlux = vec3(-1.0, 1.0, 1.0);
+
+	// set the flux boundaries
+	if (((i + bcOffsets.x) >= 0) && ((i + bcOffsets.x) < THREADS_X)) {
+		f3GSM2[j][i + bcOffsets.x] = F_tilde * boundaryVecFlux;
+	}
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// output at: i+1/2,j
+	vec3 F_hat;
+	float S2_hat_x;
+
+	// input stencil at: i-1, i, i+1, i+2
+	WENO3X(alpha_x,
+			f3GSM2[j][i - 1], f3GSM2[j][i], f3GSM2[j][i + 1], f3GSM2[j][i + 2],
+			f3GSM3[j][i - 1], f3GSM3[j][i], f3GSM3[j][i + 1], f3GSM3[j][i + 2],
+			f1GSM0[j][i - 1], f1GSM0[j][i], f1GSM0[j][i + 1], f1GSM0[j][i + 2],
+			F_hat, S2_hat_x);
+
+	// =========================== WENO RECONSTRUCTION IN Y-DIRECTION =========================== //
+
+	// store G_tilde in f3GSM1
+	f3GSM1[j][i] = G_tilde;
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// set the flux boundaries
+	if (((j + bcOffsets.y) >= 0) && ((j + bcOffsets.y) < THREADS_Y)) {
+		f3GSM1[j + bcOffsets.y][i] = G_tilde * boundaryVecFlux;
+	}
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// output at: i,j+1/2
+	vec3 G_hat;
+	float S2_hat_y;
+
+	// input stencil at: j-1, j, j+1, j+2
+	WENO3Y(alpha_y,
+			f3GSM1[j - 1][i], f3GSM1[j][i], f3GSM1[j + 1][i], f3GSM1[j + 2][i],
+			f3GSM3[j - 1][i], f3GSM3[j][i], f3GSM3[j + 1][i], f3GSM3[j + 2][i],
+			f1GSM0[j - 1][i], f1GSM0[j][i], f1GSM0[j + 1][i], f1GSM0[j + 2][i],
+			G_hat, S2_hat_y);
+
+	// =========================== POSITIVITY PRESERVATION =========================== //
+
+	float F_i = (dt / dx) * (F_hat.x - f_tilde);
+	float F_j = (dt / dy) * (G_hat.x - g_tilde);
+
+	// store F_i and F_j
+	f3GSM2[j][i].xy = vec2(F_i, F_j);
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// compute Lambda values that bound theta, xyzw -> RLUD
+	vec4 Lambda = boundingValues(vec4(-F_i, f3GSM2[j][i - 1].x, -F_j, f3GSM2[j - 1][i].y), Gamma);
+
+	// store Lambda.y(L) and Lambda.w(D)
+	f3GSM1[j][i].xy = vec2(Lambda.y, Lambda.w);
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// interpolation parameters
+	float theta_i = min(Lambda.x, f3GSM1[j][i + 1].x);
+	float theta_j = min(Lambda.z, f3GSM1[j + 1][i].y);
+	
+	// update fluxes for h component: combine low and high order fluxes
+	F_hat.x = mix(f_tilde, F_hat.x, theta_i);
+	G_hat.x = mix(g_tilde, G_hat.x, theta_j);
+
+	// =========================== TIME INTEGRATION =========================== //
+
+	// store final fluxes in x- and y-directions, S2_hat_x and S2_hat_y
+	f3GSM2[j][i] = F_hat;
+	f3GSM3[j][i] = G_hat;
+	f1GSM0[j][i] = S2_hat_x;
+	f3GSM1[j][i].z = S2_hat_y;
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// compute new U
+	// first source term was absorbed during WENO reconstruction
+	vec3 U_new = U_n - (dt / dx) * (F_hat - f3GSM2[j][i - 1]) 
+					 - (dt / dy) * (G_hat - f3GSM3[j - 1][i])
+					 - g * (h + b) * vec3(0.0, 
+					                     (dt / dx) * (S2_hat_x - f1GSM0[j][i - 1]),
+					   		             (dt / dy) * (S2_hat_y - f3GSM1[j - 1][i].z));
+
+	// =========================== COMPUTE HEIGHT AND NORMALS =========================== //
+
+	// compute and store updated height
+	float height = U_new.x + b;
+	f1GSM0[j][i] = height;
+
+	// --------------------------------------------
+	groupMemoryBarrier();
+	barrier();
+
+	// compute surface normal using central differences
+	vec3 normal;
+    normal.x = -(1 / dx) * (f1GSM0[j][i + 1] - f1GSM0[j][i - 1]);
+    normal.y = 2;
+	normal.z = -(1 / dx) * (f1GSM0[j + 1][i] - f1GSM0[j - 1][i]);
+    normal = normalize(normal);
+
+	// =========================== STORE RESULTS =========================== //
+
+	// check if cell is in global inner domain
+	bool isGlobalInner = (globalIdx.x >= bcCount) && (globalIdx.x < (nWidth + bcCount)) 
+					  && (globalIdx.y >= bcCount) && (globalIdx.y < (nHeight + bcCount));
+
+	// check if cell is in current group inner domain
+	bool isLocalInner = (i >= bcCount) && (i < (THREADS_X - bcCount)) 
+	                 && (j >= bcCount) && (j < (THREADS_Y - bcCount));
+
+	// store the result
+	if (isGlobalInner && isLocalInner) {
+		storeResults(globalIdx, vec4(normal, height), U_new, bcData, bcOffsets);
+	}
+}
+

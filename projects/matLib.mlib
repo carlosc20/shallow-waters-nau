@@ -1,0 +1,976 @@
+<?xml version="1.0" ?>
+<materialLib name="Main">
+
+	<!--***********************************************************************************
+		Rendertargets
+	************************************************************************************-->
+	<renderTargets>
+		<!-- Initialization -->
+		<renderTarget name ="rt_initSimData1">
+			<SIZE width="NWIDTH+2BC" height="NHEIGHT+2BC" />
+			<colors>
+				<color name="simData1" internalFormat="RGBA32F" />
+			</colors>
+		</renderTarget>
+
+		<renderTarget name ="rt_initSimData2">
+			<SIZE width="NWIDTH+2BC" height="NHEIGHT+2BC" />
+			<colors>
+				<color name="simData2" internalFormat="RGBA32F" />
+			</colors>
+		</renderTarget>
+
+		<renderTarget name ="rt_initNormalAndHeight">
+			<SIZE width="NWIDTH+2BC" height="NHEIGHT+2BC" />
+			<colors>
+				<color name="normalAndHeight" internalFormat="RGBA32F" />
+			</colors>
+		</renderTarget>
+
+		<renderTarget name="rt_maxMipmap" >
+			<SIZE width="NWIDTH+2BC" height="NHEIGHT+2BC" />
+			<LEVELS value="MIP_LEVELS" /> 
+			<colors>
+				<color name="bathymetry" internalFormat="R32F"  />
+			</colors>		
+		</renderTarget>
+
+		<!-- Every frame -->
+		<renderTarget name ="rt_noise">
+			<SIZE width="NOISE_DIM_W" height="NOISE_DIM_H" />
+			<colors>
+				<color name="noiseTex" internalFormat="RGBA16F" />
+			</colors>
+		</renderTarget>
+
+		<renderTarget name ="rt_noiseTemp">
+			<SIZE width="NOISE_DIM_W" height="NOISE_DIM_H" />
+			<colors>
+				<color name="noiseTexTemp" internalFormat="RGBA16F" />
+			</colors>
+		</renderTarget>
+
+		<renderTarget name ="rt_causticsMap">
+			<SIZE width="CMAP_W" height="CMAP_H" />
+			<colors>
+				<color name="causticsMap" internalFormat="R32F" /> 
+			</colors>
+			<CLEAR_VALUES r=0.0 g=0.0 b=0.0 a=0.0/>
+		</renderTarget>
+
+		<renderTarget name ="rt_causticsMapPath">
+			<SIZE width="CMAP_W" height="CMAP_H" />
+			<colors>
+				<color name="causticsMapPath" internalFormat="R32F" /> 
+			</colors>
+			<CLEAR_VALUES r=1000.0 g=0.0 b=0.0 a=0.0/>
+		</renderTarget>
+
+	</renderTargets>
+
+	<!--***********************************************************************************
+		Textures
+	************************************************************************************-->
+	<textures>
+		<!-- Bottom terrain heightfield -> bathymetry -->
+		<texture name="initBat" filename="../images/heightfields/dunes.png"/>
+		<!-- <texture name="initBat" filename="../images/heightfields/heightfield320.png"/> -->
+		<!-- <texture name="initBat" filename="../images/heightfields/SantaMonicaMountains-512.jpg"/> -->
+		<!-- <texture name="initBat" filename="../images/heightfields/blob.png"/> -->
+		<!-- <texture name="initBat" filename="../images/heightfields/blob2.jpg"/> -->
+		<!-- <texture name="initBat" filename="../images/heightfields/m1.jpg"/> -->
+		<!-- <texture name="initBat" filename="../images/heightfields/test.png"/> -->
+
+		<!-- Bottom terrain normals -->
+		<texture name="normalTex">
+			<WIDTH value="NWIDTH" />
+			<HEIGHT value="NHEIGHT" />
+			<INTERNAL_FORMAT value="RGBA16F" />
+			<LEVELS value="0" />
+		</texture>
+
+		<!-- Skybox -->
+		<cubeMap name="skybox" 
+			filePosX="../images/skybox/right.jpg"
+			fileNegX="../images/skybox/left.jpg"
+			filePosY="../images/skybox/bottom.jpg"
+			fileNegY="../images/skybox/top.jpg"
+			filePosZ="../images/skybox/front.jpg"
+			fileNegZ="../images/skybox/back.jpg"	
+            mipmap="true"
+		/>
+
+		<!-- Terrain tile color and normal map -->
+		<texture name="terrainTex" filename="../images/sand/sand.jpg"/>
+		<!-- <texture name="terrainTex" filename="../images/dirt/Dirt_003_COLOR.png"/> -->
+		<!-- <texture name="terrainTex" filename="../images/floor/debug.jpg"/> -->
+		<!-- <texture name="terrainTex" filename="../images/floor/mosaic.jpg"/> -->
+
+		<texture name="terrainNormalMap" filename="../images/sand/sand_normal.jpg"/>
+		<!-- <texture name="terrainNormalMap" filename="../images/dirt/Dirt_003_NRM.png"/> -->
+		
+
+	</textures>
+	
+	<!--***********************************************************************************
+		Buffers
+	************************************************************************************-->
+	<buffers>
+		<!-- Grid -->
+		<buffer name="gridIndex" >
+			<DIM x="NWIDTH-1" y="NHEIGHT-1" z=6 />
+			<structure>
+				<field value="UINT" />
+			</structure>	
+		</buffer>
+		<buffer name="gridPos" >
+			<DIM x="NWIDTH" y="NHEIGHT" z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+		<buffer name="gridNormal" >
+			<DIM x="NWIDTH" y="NHEIGHT" z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+
+		<!-- Grid sides -->
+		<buffer name="gridSidesIndex" >
+			<DIM x="SIDES" y=2 z=1 />
+			<structure>
+				<field value="UINT" />
+			</structure>	
+		</buffer>
+		<buffer name="gridSidesPos" >
+			<DIM x="SIDES" y=2 z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+		<buffer name="gridSidesNormal" >
+			<DIM x="SIDES" y=2 z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+
+		<!-- Caustics grid -->
+		<buffer name="causticsIndex" >
+			<DIM x="CWIDTH-1" y="CHEIGHT-1" z=6 />
+			<structure>
+				<field value="UINT" />
+			</structure>	
+		</buffer>
+		<buffer name="causticsData" >
+			<DIM x="CWIDTH" y="CHEIGHT" z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+
+		<!-- Background grid -->
+		<buffer name="backgroundGridIndex" >
+			<DIM x=4 y=1 z=1 />
+			<structure>
+				<field value="UINT" />
+			</structure>	
+		</buffer>
+		<buffer name="backgroundGridPos" >
+			<DIM x=4 y=1 z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+
+		<!-- Box -->
+		<buffer name="boxIndex" >
+			<DIM x=6 y=4 z=1 />
+			<structure>
+				<field value="UINT" />
+			</structure>	
+		</buffer>
+		<buffer name="boxPos" >
+			<DIM x=4 y=4 z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+		<buffer name="boxNormal" >
+			<DIM x=4 y=4 z=1 />
+			<structure>
+				<field value="VEC4" />
+			</structure>	
+		</buffer>
+
+	</buffers>	
+
+	<!--***********************************************************************************
+		States
+	************************************************************************************-->
+	<states>
+		<state name="skybox">
+            <DEPTH_FUNC value="LEQUAL" />
+            <CULL_TYPE value="FRONT" />
+        </state>
+
+		<state name="causticsMap">
+			<CULL_FACE value="FALSE" />
+			<DEPTH_TEST value="FALSE" />
+			<BLEND 	   value="TRUE" />
+			<BLEND_SRC value="ONE" />
+			<BLEND_DST value="ONE" />
+			<BLEND_EQUATION value="ADD" />
+        </state>
+
+		<state name="causticsMapPath">
+			<CULL_FACE value="FALSE" />
+			<DEPTH_TEST value="FALSE" />
+			<BLEND 	   value="TRUE" />
+			<BLEND_SRC value="ONE" />
+			<BLEND_DST value="ONE" />
+			<BLEND_EQUATION value="MIN" />
+        </state>
+
+		<state name="box">
+			<CULL_FACE value="FALSE" />
+        </state>
+	</states>
+
+	<!--***********************************************************************************
+		Shaders
+	************************************************************************************-->
+    <shaders>
+		<!-- Initialization -->
+     	<shader name="shader_initGrid"
+			cs="../shaders/setup/initGrid.comp" /> 
+
+		<shader name="shader_initSimData"   
+			ps="../shaders/setup/initSimData.frag"
+			vs="../shaders/quadShader.vert" />
+
+		<shader name="shader_initBathymetry"   
+			cs="../shaders/setup/initBat.comp" />
+			
+		<shader name="shader_initNormalAndHeight"   
+			ps="../shaders/setup/initNormalAndHeight.frag"
+			vs="../shaders/quadShader.vert" />
+
+		<!-- Solver -->
+		<shader name="shader_solver"
+			cs="../shaders/solver/pifweno3pp.comp" /> 
+			<!-- cs="../shaders/solver/pifweno3ppWet.comp" />  -->
+			<!-- cs="../shaders/solver/pifweno3ppBorder.comp" />  -->
+			
+
+		<!-- Terrain -->
+		<shader name="shader_terrain"   
+			ps="../shaders/terrain/terrain.frag"
+			vs="../shaders/terrain/terrain.vert" />
+		<shader name="shader_maxMipmap"	
+			cs="../shaders/setup/maxMipmap.comp" /> 
+		<!-- Water -->
+		<shader name="shader_water"   
+			vs="../shaders/water/water.vert" >
+			<ps>
+				<file name= "../shaders/water/header.glsl" />
+				<file name= "../shaders/water/intersection.frag" /> 
+				<!-- <file name= "../shaders/water/intersection_iters.frag" /> -->
+				<file name= "../shaders/water/rayMarching.frag" />
+				<file name= "../shaders/water/participatingMedia.frag" />
+				<file name= "../shaders/water/waterBrdf.frag" />
+				<file name= "../shaders/water/caustics.frag" />
+				<file name= "../shaders/water/waterRealistic.frag" />
+			</ps>
+		</shader>
+		<shader name="shader_waterSides"   
+			vs="../shaders/water/waterSides.vert" >
+			<ps>
+				<file name= "../shaders/water/header.glsl" />
+				<file name= "../shaders/water/intersection.frag" />
+				<!-- <file name= "../shaders/water/intersection_iters.frag" /> -->
+				<file name= "../shaders/water/rayMarching.frag" />
+				<file name= "../shaders/water/participatingMedia.frag" />
+				<file name= "../shaders/water/waterBrdf.frag" />
+				<file name= "../shaders/water/caustics.frag" />
+				<file name= "../shaders/water/waterSides.frag" />
+			</ps>
+		</shader>
+		<!-- Caustics -->
+		<shader name="shader_causticsBuffer" 
+			cs="../shaders/caustics/caustic.comp" />
+
+
+		<shader name="shader_causticsMap" 
+			ps="../shaders/caustics/causticsIntensity.frag" 
+			vs="../shaders/caustics/causticsIntensity.vert" />
+		<shader name="shader_causticsMapPath" 
+			ps="../shaders/caustics/causticsPathlength.frag" 
+			vs="../shaders/caustics/causticsPathlength.vert" />
+		<!-- Noise -->
+		<shader name="shader_noisePerlin"   
+			vs="../shaders/quadShader.vert"  >
+			<ps>
+				<file name= "../shaders/noise/headerPerlin.glsl" />
+				<file name= "../shaders/noise/psrdnoise3.glsl"  />
+				<file name= "../shaders/noise/perlin.frag"  />
+			</ps>
+		</shader>
+		<shader name="shader_noiseCellular"   
+			vs="../shaders/quadShader.vert"  >
+			<ps>
+				<file name= "../shaders/noise/headerNoise.glsl" />
+				<file name= "../shaders/noise/psrdnoise3.glsl"  />
+				<file name= "../shaders/noise/cellular3D.glsl"  />
+				<file name= "../shaders/noise/cellular.frag"  />
+			</ps>
+		</shader>
+		<shader name="shader_normals" 
+			ps="../shaders/noise/computeNormals.frag" 
+			vs="../shaders/quadShader.vert" />
+
+		<!-- Skybox -->
+		<shader name="shader_skybox"
+			ps="../shaders/skybox/skybox.frag"
+			vs="../shaders/skybox/skybox.vert" />
+
+		<!-- Debugging -->
+		<shader name="shader_testComp"
+			cs="../shaders/debug/test.comp" /> 
+
+		<shader name="shader_showQuad"
+			ps="../shaders/debug/quadShader.frag"
+			vs="../shaders/quadShader.vert" />
+		<shader name="shader_showQuadPath"
+			ps="../shaders/debug/quadShaderPath.frag"
+			vs="../shaders/quadShader.vert" />
+		<shader name="shader_showMipLevel"
+			ps="../shaders/debug/quadShaderMip.frag"
+			vs="../shaders/quadShader.vert" />
+		<shader name="shader_causticsMapDebug" 
+			ps="../shaders/debug/causticsDebug.frag" 
+			vs="../shaders/debug/causticsDebug.vert" />
+
+    </shaders>
+
+
+	<!--***********************************************************************************
+		Materials
+	************************************************************************************-->
+	<materials>
+
+		<!--***********************************************************************************
+			Initial setup
+		************************************************************************************-->
+		<material name="mat_initGrid" >
+		    <shader name="shader_initGrid" >
+		        <values>
+					<valueof uniform="nWidth" 	type="RENDERER" context="CURRENT" component="nWidth" />
+					<valueof uniform="nHeight"	type="RENDERER" context="CURRENT" component="nHeight" />
+
+					<valueof uniform="causticsGridDensity" 	type="RENDERER" context="CURRENT" component="causticsGridDensity" />
+
+					<valueof uniform="bathymetry"	type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=0 />
+					<valueof uniform="normalTex"	type="IMAGE_TEXTURE" 	context="CURRENT" 	component="UNIT" id=1 />
+				</values>
+		    </shader>
+
+			<buffers>	
+				<buffer name="gridIndex" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="0" />
+				</buffer>
+				<buffer name="gridPos" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="1" />
+				</buffer>
+				<buffer name="gridNormal" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="3" />
+				</buffer>
+
+
+				<buffer name="gridSidesIndex" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="6" />
+				</buffer>
+				<buffer name="gridSidesPos" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="7" />
+				</buffer>
+				<buffer name="gridSidesNormal" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="8" />
+				</buffer>
+
+				<buffer name="causticsIndex" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="10" />
+				</buffer>
+
+				<buffer name="backgroundGridIndex" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="11" />
+				</buffer>
+				<buffer name="backgroundGridPos" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="12" />
+				</buffer>
+
+				<buffer name="boxIndex" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="13" />
+				</buffer>
+				<buffer name="boxPos" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="14" />
+				</buffer>
+				<buffer name="boxNormal" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="15" />
+				</buffer>
+				
+			</buffers>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" >
+					<MIN_FILTER value="NEAREST" />
+					<MAG_FILTER value="NEAREST" />
+				</texture>    
+			</textures>
+
+			<imageTextures>
+				<imageTexture UNIT=1 texture="normalTex" >
+					<ACCESS value="WRITE_ONLY" />
+					<INTERNAL_FORMAT value="RGBA16F" />
+					<LEVEL value=0 />
+				</imageTexture>
+			</imageTextures>
+		</material>
+
+		<material name="mat_initBathymetry" >
+		    <shader name="shader_initBathymetry" >
+		        <values>
+					<valueof uniform="nWidth" 		type="RENDERER" context="CURRENT" component="nWidth" />
+					<valueof uniform="nHeight"		type="RENDERER" context="CURRENT" component="nHeight" />
+
+					<valueof uniform="terrainMode"	type="RENDERER" context="CURRENT" component="terrainMode" />
+					<valueof uniform="terrainMult"	type="RENDERER" context="CURRENT" component="terrainMult" />
+
+					<valueof uniform="initBat"		type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=0 />
+					<valueof uniform="bathymetry"	type="IMAGE_TEXTURE" 	context="CURRENT" 	component="UNIT" id=1 />
+				</values>
+		    </shader>
+
+			<textures>
+				<texture UNIT=0 name="initBat" >
+					<MIN_FILTER value="LINEAR" />
+					<MAG_FILTER value="LINEAR" />
+					<WRAP_S value="MIRRORED_REPEAT" />
+					<WRAP_T value="MIRRORED_REPEAT" />
+				</texture>    
+			</textures>
+
+			<imageTextures>
+				<imageTexture UNIT=1 texture="bathymetry" >
+					<ACCESS value="WRITE_ONLY" />
+					<INTERNAL_FORMAT value="R32F" />
+					<LEVEL value=0 />
+				</imageTexture>
+			</imageTextures>
+		</material>
+
+		<material name ="mat_initSimData">
+			<shader name="shader_initSimData">
+				<values>	
+					<valueof uniform="nWidth" 		type="RENDERER"			context="CURRENT"	component="nWidth" />
+					<valueof uniform="nHeight" 		type="RENDERER" 		context="CURRENT" 	component="nHeight" />	
+					<valueof uniform="bathymetry"	type="TEXTURE_BINDING" 	context="CURRENT" 	component="UNIT" id=0 />
+
+					<valueof uniform="lowDepth"		type="RENDERER"	context="CURRENT"	component="lowDepth" />
+					<valueof uniform="highDepth"	type="RENDERER"	context="CURRENT"	component="highDepth" />
+					<valueof uniform="highRatio"	type="RENDERER"	context="CURRENT"	component="highRatio" />
+					<valueof uniform="depthMode"	type="RENDERER"	context="CURRENT"	component="depthMode"/>													 
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" />
+			</textures>
+		</material>
+
+		<material name ="mat_initNormalAndHeight">
+			<shader name="shader_initNormalAndHeight">
+				<values>	
+					<valueof uniform="oodx"			type="RENDERER"		context="CURRENT"	component="oodx" />
+
+					<valueof uniform="bathymetry"	type="TEXTURE_BINDING" 	context="CURRENT" 	component="UNIT" id=0 />
+					<valueof uniform="simData"		type="TEXTURE_BINDING" 	context="CURRENT" 	component="UNIT" id=1 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" />
+				<texture UNIT=1 name="simData1" />
+			</textures>
+		</material>
+		
+		<material name="mat_maxMipmap" >
+			<shader name="shader_maxMipmap">
+				<values>
+					<valueof uniform="dstTex"		type="IMAGE_TEXTURE" 	context="CURRENT" component="UNIT" id=1 />
+					<valueof uniform="srcTex"		type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=1 />
+					<valueof uniform="destMipLevel"	type="PASS" 			context="CURRENT" component="currentMipLevel" />
+				</values>
+			</shader>	
+
+			<textures>
+				<texture UNIT=1 name="bathymetry" >
+					<MIN_FILTER value="NEAREST_MIPMAP_NEAREST" />
+					<MAG_FILTER value="NEAREST" />
+					<WRAP_S value="CLAMP_TO_BORDER" />
+					<WRAP_T value="CLAMP_TO_BORDER" />
+				</texture>
+			</textures>
+
+			<imageTextures>
+				<imageTexture UNIT=1 texture="bathymetry" >
+					<ACCESS value="WRITE_ONLY" />
+					<INTERNAL_FORMAT value="R32F" />
+					<LEVEL value=1 />
+				</imageTexture>
+			</imageTextures>
+		</material>
+
+		<!--***********************************************************************************
+			Caustics
+		************************************************************************************-->
+		<material name="mat_causticsBuffer" >
+			<shader name="shader_causticsBuffer">
+				<values>
+					<valueof uniform="lightDir" 		type="LIGHT" 			context="Sun" 		component="DIRECTION" />	
+
+					<valueof uniform="nWidth" 			type="RENDERER"			context="CURRENT"	component="nWidth" />
+					<valueof uniform="nHeight" 			type="RENDERER" 		context="CURRENT" 	component="nHeight" />	
+					<valueof uniform="dx"				type="RENDERER"			context="CURRENT"	component="dx" />
+
+					<valueof uniform="waterIor"			type="RENDERER"			context="CURRENT"	component="nWater" />
+					<valueof uniform="intersectIters" 	type="RENDERER" 		context="CURRENT" 	component="causticsIters" />	
+					
+					<valueof uniform="nDensity" 		type="RENDERER" 		context="CURRENT" 	component="causticsGridDensity" />	
+
+					<valueof uniform="noiseMode"		type="RENDERER"			context="CURRENT"	component="noiseMode" />
+
+					<valueof uniform="normalAndHeight"	type="TEXTURE_BINDING" 	context="CURRENT" 	component="UNIT" id=0 />
+					<valueof uniform="normalMapNoise"	type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=1 />
+					<valueof uniform="bathymetry"		type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=2 />
+					
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="normalAndHeight" />
+				<texture UNIT=1 name="noiseTex" >
+					<WRAP_S value="CLAMP_TO_EDGE" />
+					<WRAP_T value="CLAMP_TO_EDGE" />
+				</texture>
+				<texture UNIT=2 name="bathymetry" />
+			</textures>
+
+			<buffers>	
+				<buffer name="causticsData" >
+					<TYPE value="SHADER_STORAGE" />
+					<BINDING_POINT value="0" />
+				</buffer>
+			</buffers>
+		</material>
+
+		<material name="mat_causticsMap" >
+			<shader name="shader_causticsMap">
+				<values>
+					<valueof uniform="m_pvm"  type="RENDERER" context="CURRENT" component="PROJECTION_VIEW_MODEL" />
+				</values>
+			</shader>
+
+			<state name="causticsMap"/>
+		</material>
+
+		<material name="mat_causticsMapPath" >
+			<shader name="shader_causticsMapPath">
+				<values>
+					<valueof uniform="m_pvm"  type="RENDERER" context="CURRENT" component="PROJECTION_VIEW_MODEL" />
+				</values>
+			</shader>
+
+			<state name="causticsMapPath"/>
+		</material>
+		
+
+		<!--***********************************************************************************
+			Noise
+		************************************************************************************-->
+		<material name="mat_noisePerlin">
+			<shader name="shader_noisePerlin">
+				<values>
+					<valueof uniform="nWidth" 	type="RENDERER" context="CURRENT" component="nWidth" />
+					<valueof uniform="nHeight"	type="RENDERER" context="CURRENT" component="nHeight" />
+
+					<valueof uniform="time" 			type="RENDERER" 	context="CURRENT" 	component="simTime" />
+					<valueof uniform="octaves" 			type="RENDERER" 	context="CURRENT" 	component="noiseOctaves" />	
+					<valueof uniform="baseAmplitude" 	type="RENDERER" 	context="CURRENT" 	component="noiseBaseAmplitude" 	/>
+					<valueof uniform="baseFrequency" 	type="RENDERER" 	context="CURRENT" 	component="noiseBaseFrequency" 	/>
+					<valueof uniform="baseSpeed" 		type="RENDERER" 	context="CURRENT" 	component="noiseSpeed" />
+					<valueof uniform="persistence" 		type="RENDERER" 	context="CURRENT" 	component="noiseGain" 		/>
+					<valueof uniform="lacunarity" 		type="RENDERER" 	context="CURRENT" 	component="noiseRoughness" 	/>
+					<valueof uniform="speedGain" 		type="RENDERER" 	context="CURRENT" 	component="noiseSpeedGain" 	/>
+					<valueof uniform="warping" 			type="RENDERER" 	context="CURRENT" 	component="noiseWarping" 	/>
+					<valueof uniform="windEnabled" 		type="RENDERER" 	context="CURRENT" 	component="noiseWindEnabled" 	/>
+				</values>
+			</shader>
+		</material>	
+
+		<material name="mat_noiseCellular">
+			<shader name="shader_noiseCellular">
+				<values>
+					<valueof uniform="nWidth" 			type="RENDERER" context="CURRENT" component="nWidth" />
+					<valueof uniform="nHeight"			type="RENDERER" context="CURRENT" component="nHeight" />
+
+					<valueof uniform="time" 			type="RENDERER" 	context="CURRENT" 	component="simTime" />
+					<valueof uniform="octaves" 			type="RENDERER" 	context="CURRENT" 	component="noiseOctaves" />	
+					<valueof uniform="baseAmplitude" 	type="RENDERER" 	context="CURRENT" 	component="noiseBaseAmplitude" 	/>
+					<valueof uniform="baseFrequency" 	type="RENDERER" 	context="CURRENT" 	component="noiseBaseFrequency" 	/>
+					<valueof uniform="baseSpeed" 		type="RENDERER" 	context="CURRENT" 	component="noiseSpeed" />
+					<valueof uniform="persistence" 		type="RENDERER" 	context="CURRENT" 	component="noiseGain" 		/>
+					<valueof uniform="lacunarity" 		type="RENDERER" 	context="CURRENT" 	component="noiseRoughness" 	/>
+					<valueof uniform="warping" 			type="RENDERER" 	context="CURRENT" 	component="noiseWarping" 	/>
+					<valueof uniform="perlinShare" 		type="RENDERER" 	context="CURRENT" 	component="noisePerlinShare" 	/>
+					<valueof uniform="windEnabled" 		type="RENDERER" 	context="CURRENT" 	component="noiseWindEnabled" 	/>
+					<valueof uniform="squared" 			type="RENDERER" 	context="CURRENT" 	component="noiseSquared" 	/>
+				</values>
+			</shader>
+		</material>	
+
+		<material name="mat_normals">
+			<shader name="shader_normals">
+				<values>
+					<valueof uniform="texWidth" 	type="RENDERER" 		context="CURRENT" component="noiseWidth" />
+					<valueof uniform="texHeight"	type="RENDERER" 		context="CURRENT" component="noiseHeight" />
+
+					<valueof uniform="noiseTex"		type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=0 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="noiseTexTemp"  />
+			</textures>
+		</material>
+
+		<!--***********************************************************************************
+			Skybox
+		************************************************************************************-->
+		<material name="mat_skybox">
+            <shader name="shader_skybox">
+                <values>
+                    <valueof uniform="m_proj" 	type="RENDERER" 		context="CURRENT" 	component="PROJECTION" />
+                    <valueof uniform="m_view" 	type="RENDERER" 		context="CURRENT" 	component="VIEW" />
+                    <valueof uniform="skybox" 	type="TEXTURE_BINDING"  context="CURRENT"	component="UNIT" id="0" />
+                </values>
+            </shader>    
+            <state name="skybox"/>
+            <textures>
+                <texture name="skybox" UNIT="0" />
+            </textures>
+        </material>
+
+		<!--***********************************************************************************
+			Terrain
+		************************************************************************************-->
+		<material name="mat_terrain">
+			<shader name="shader_terrain">
+				<values>
+					<valueof uniform="m_pvm" 			type="RENDERER" 		context="CURRENT" 	component="PROJECTION_VIEW_MODEL" /> 
+					<valueof uniform="m_normal" 		type="RENDERER" 		context="CURRENT" 	component="NORMAL" />
+					<valueof uniform="m_view" 			type="RENDERER" 		context="CURRENT" 	component="VIEW" />
+					<valueof uniform="m_model" 			type="RENDERER" 		context="CURRENT" 	component="MODEL" />	
+
+					<valueof uniform="lightDir" 		type="LIGHT" 			context="Sun" 		component="DIRECTION" />
+					<valueof uniform="ambient"			type="RENDERER"			context="CURRENT"	component="ambientLight" />
+
+					<valueof uniform="terrainTiling" 			type="RENDERER" 		context="CURRENT" 	component="terrainTiling" />
+					<valueof uniform="terrainCausticsEnabled" 	type="RENDERER" 		context="CURRENT" 	component="terrainCausticsEnabled" />
+
+					<valueof uniform="nWidth" 			type="RENDERER"		context="CURRENT"	component="nWidth" />
+					<valueof uniform="nHeight" 			type="RENDERER" 	context="CURRENT" 	component="nHeight" />	
+					<valueof uniform="oodx"				type="RENDERER"		context="CURRENT"	component="oodx" />
+
+					<valueof uniform="terrainTex"		type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=0 />
+					<valueof uniform="normalMap"		type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=1 />
+					<valueof uniform="causticsMap"		type="TEXTURE_BINDING"	context="CURRENT" 	component="UNIT" id=2 />
+				</values>
+			</shader>
+			
+			<textures>
+				<texture UNIT=0 name="terrainTex"  />
+				<texture UNIT=1 name="terrainNormalMap" />
+				<texture UNIT=2 name="causticsMap" />
+			</textures>
+
+			<state name="box"/>
+		</material>
+
+		<material name="mat_box">
+			<!-- TODO -->
+			<state name="box"/>
+		</material>
+
+		<!--***********************************************************************************
+			Water
+		************************************************************************************-->
+		<material name="mat_water">
+			<shader name="shader_water">
+				<values>
+					<valueof uniform="m_pvm" 			type="RENDERER" 	context="CURRENT" 	component="PROJECTION_VIEW_MODEL" />
+					<valueof uniform="m_model" 			type="RENDERER" 	context="CURRENT" 	component="MODEL" />	
+					<valueof uniform="cameraPos" 		type="CAMERA" 		context="CURRENT" 	component="POSITION" />
+					<valueof uniform="lightDir" 		type="LIGHT" 		context="Sun" 		component="DIRECTION" />		
+					<valueof uniform="terrainTiling" 	type="RENDERER" 	context="CURRENT" 	component="terrainTiling" />
+
+					<!-- general -->
+					<valueof uniform="mode" 			type="RENDERER"		context="CURRENT"	component="renderMode" />
+					<valueof uniform="noiseMode"		type="RENDERER"		context="CURRENT"	component="noiseMode" />
+					<valueof uniform="causticsEnabled" 	type="RENDERER" 	context="CURRENT" 	component="causticsEnabled" 	/>
+					<valueof uniform="aproxLightPath"	type="RENDERER"		context="CURRENT"	component="aproxLightPath" />
+					<valueof uniform="threshold"		type="RENDERER"		context="CURRENT"	component="threshold" />
+					<valueof uniform="wetDryFix"		type="RENDERER"		context="CURRENT"	component="wetDryFix" />
+					<valueof uniform="fresnelEpsilon"	type="RENDERER"		context="CURRENT"	component="fresnelEpsilon" />
+
+					<!-- simulation -->
+					<valueof uniform="activeTex"	type="RENDERER"		context="CURRENT"	component="activeTex" />
+					<valueof uniform="nWidth" 		type="RENDERER"		context="CURRENT"	component="nWidth" />
+					<valueof uniform="nHeight" 		type="RENDERER" 	context="CURRENT" 	component="nHeight" />	
+					<valueof uniform="dx"			type="RENDERER"		context="CURRENT"	component="dx" />
+					<valueof uniform="oodx"			type="RENDERER"		context="CURRENT"	component="oodx" />
+
+					<!-- water optical properties -->
+					<valueof uniform="waterIor"				type="RENDERER"		context="CURRENT"	component="nWater" />
+					<valueof uniform="absorptionCoefBase"	type="RENDERER"		context="CURRENT"	component="absorptionCoef" />
+					<valueof uniform="scatterDiffuse"		type="RENDERER"		context="CURRENT"	component="scatterDiffuse" />
+					<valueof uniform="concScatter"			type="RENDERER"		context="CURRENT"	component="concScatter" />
+					<valueof uniform="concAbsorb"			type="RENDERER"		context="CURRENT"	component="concAbsorb" />
+					
+					<!-- intersection -->
+					<valueof uniform="intersectionMode"	type="RENDERER"		context="CURRENT"	component="intersectionMode" />
+					<valueof uniform="reflEnabled"		type="RENDERER"		context="CURRENT"	component="reflEnabled" />
+					<valueof uniform="maxLevels" 		type="RENDERER" 	context="CURRENT"	component="levels"  />
+					<valueof uniform="finestLevel" 		type="RENDERER" 	context="CURRENT"	component="finestLevel"  />
+					<valueof uniform="linearAprox" 		type="RENDERER" 	context="CURRENT"	component="linearAprox"  />
+					<valueof uniform="linearSteps" 		type="RENDERER" 	context="CURRENT"	component="linearSteps"  />
+					<valueof uniform="refineSteps" 		type="RENDERER" 	context="CURRENT"	component="refineSteps"  />
+				
+					<!-- brdf -->
+					<valueof uniform="alpha"			type="RENDERER"		context="CURRENT"	component="roughness" />
+					<valueof uniform="ambient"			type="RENDERER"		context="CURRENT"	component="ambientLight" />
+					
+					<!-- textures -->
+					<valueof uniform="bathymetry"		type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=0 />
+					<valueof uniform="simData1"			type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=1 />
+					<valueof uniform="simData2"			type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=2 />
+					<valueof uniform="skybox"			type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=3 />
+					<valueof uniform="terrainTex"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=4 />
+					<valueof uniform="normalTex"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=5 />
+					<valueof uniform="normalMapNoise"	type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=7 />
+					<valueof uniform="normalAndHeight"	type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=8 />
+					<valueof uniform="causticsMap"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=9 />
+					<valueof uniform="causticsMapPath"	type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=10 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" />
+				<texture UNIT=1 name="simData1" />
+				<texture UNIT=2 name="simData2" />
+				<texture UNIT=3 name="skybox" />
+				<texture UNIT=4 name="terrainTex"  />
+				<texture UNIT=5 name="normalTex" />
+				<texture UNIT=7 name="noiseTex" >
+					<WRAP_S value="MIRRORED_REPEAT" />
+					<WRAP_T value="MIRRORED_REPEAT" />
+				</texture>    
+				<texture UNIT=8 name="normalAndHeight" />
+				<texture UNIT=9 name="causticsMap" />
+				<texture UNIT=10 name="causticsMapPath" />
+			</textures>
+		</material>
+
+		<material name="mat_waterSides">
+			<shader name="shader_waterSides">
+				<values>
+					<valueof uniform="m_pvm" 			type="RENDERER" 	context="CURRENT" 	component="PROJECTION_VIEW_MODEL" />
+					<valueof uniform="m_model" 			type="RENDERER" 	context="CURRENT" 	component="MODEL" />	
+					<valueof uniform="cameraPos" 		type="CAMERA" 		context="CURRENT" 	component="POSITION" />
+					<valueof uniform="lightDir" 		type="LIGHT" 		context="Sun" 		component="DIRECTION" />		
+					<valueof uniform="terrainTiling" 	type="RENDERER" 	context="CURRENT" 	component="terrainTiling" />
+
+					<!-- general -->
+					<valueof uniform="mode" 			type="RENDERER"		context="CURRENT"	component="renderMode" />
+					<valueof uniform="causticsEnabled" 	type="RENDERER" 	context="CURRENT" 	component="causticsEnabled" 	/>
+					<valueof uniform="aproxLightPath"	type="RENDERER"		context="CURRENT"	component="aproxLightPath" />
+
+					<!-- simulation -->
+					<valueof uniform="nWidth" 		type="RENDERER"		context="CURRENT"	component="nWidth" />
+					<valueof uniform="nHeight" 		type="RENDERER" 	context="CURRENT" 	component="nHeight" />	
+					<valueof uniform="dx"			type="RENDERER"		context="CURRENT"	component="dx" />
+					<valueof uniform="oodx"			type="RENDERER"		context="CURRENT"	component="oodx" />
+
+					<!-- water optical properties -->
+					<valueof uniform="waterIor"			type="RENDERER"		context="CURRENT"	component="nWater" />
+					<valueof uniform="absorptionCoefBase"	type="RENDERER"		context="CURRENT"	component="absorptionCoef" />
+					<valueof uniform="scatterDiffuse"	type="RENDERER"		context="CURRENT"	component="scatterDiffuse" />
+					<valueof uniform="concScatter"		type="RENDERER"		context="CURRENT"	component="concScatter" />
+					<valueof uniform="concAbsorb"		type="RENDERER"		context="CURRENT"	component="concAbsorb" />
+					
+					<!-- intersection -->
+					<valueof uniform="intersectionMode"	type="RENDERER"		context="CURRENT"	component="intersectionMode" />
+					<valueof uniform="maxLevels" 	type="RENDERER" 	context="CURRENT"	component="levels"  />
+					<valueof uniform="finestLevel" 	type="RENDERER" 	context="CURRENT"	component="finestLevel"  />
+					<valueof uniform="linearAprox" 	type="RENDERER" 	context="CURRENT"	component="linearAprox"  />
+					<valueof uniform="linearSteps" 	type="RENDERER" 	context="CURRENT"	component="linearSteps"  />
+					<valueof uniform="refineSteps" 	type="RENDERER" 	context="CURRENT"	component="refineSteps"  />
+
+					<!-- brdf -->
+					<valueof uniform="alpha"		type="RENDERER"		context="CURRENT"	component="roughness" />
+					<valueof uniform="ambient"		type="RENDERER"		context="CURRENT"	component="ambientLight" />
+
+					<!-- textures -->
+					<valueof uniform="bathymetry"		type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=0 />
+					<valueof uniform="skybox"			type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=3 />
+					<valueof uniform="terrainTex"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=4 />
+					<valueof uniform="normalTex"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=5 />
+					<valueof uniform="normalAndHeight"	type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=8 />
+					<valueof uniform="causticsMap"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=9 />
+					<valueof uniform="causticsMapPath"	type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=10 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" />
+				<texture UNIT=1 name="simData1" />
+				<texture UNIT=2 name="simData2" />
+				<texture UNIT=3 name="skybox" />
+				<texture UNIT=4 name="terrainTex"  />
+				<texture UNIT=5 name="normalTex" />
+				<texture UNIT=8 name="normalAndHeight" />
+				<texture UNIT=9 name="causticsMap" />
+				<texture UNIT=10 name="causticsMapPath" />
+			</textures>
+		</material>
+
+		<!--***********************************************************************************
+			Solver
+		************************************************************************************-->
+		<material name="mat_computeStep">
+			<shader name="shader_solver">
+				<values>
+					<valueof uniform="nWidth" 		type="RENDERER" 	context="CURRENT" 	component="nWidth" />
+					<valueof uniform="nHeight" 		type="RENDERER" 	context="CURRENT" 	component="nHeight" />
+					<valueof uniform="dx" 			type="RENDERER" 	context="CURRENT" 	component="dx" />
+					<valueof uniform="dt" 			type="RENDERER" 	context="CURRENT" 	component="dt" />
+
+					<valueof uniform="dEpsilon" 	type="RENDERER" 	context="CURRENT" 	component="epsilon" />
+					<valueof uniform="maxSpeed" 	type="RENDERER" 	context="CURRENT" 	component="maxSpeedSolver" />
+
+					<valueof uniform="activeTex"	type="RENDERER"		context="CURRENT"	component="activeTex" />
+
+					<valueof uniform="bathymetry"	type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=0 />
+					<valueof uniform="simData1"		type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=1 />
+					<valueof uniform="simData2"		type="TEXTURE_BINDING"	context="CURRENT" component="UNIT" id=2 />
+					<valueof uniform="results1"		type="IMAGE_TEXTURE" 	context="CURRENT" component="UNIT" id=3 />
+					<valueof uniform="results2"		type="IMAGE_TEXTURE" 	context="CURRENT" component="UNIT" id=4 />
+					<valueof uniform="resultsAux"	type="IMAGE_TEXTURE" 	context="CURRENT" component="UNIT" id=5 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" />
+				<texture UNIT=1 name="simData1" />
+				<texture UNIT=2 name="simData2" />
+			</textures>
+
+			<imageTextures>
+				<imageTexture UNIT=3 texture="simData1" >
+					<ACCESS value="WRITE_ONLY" />
+					<INTERNAL_FORMAT value="RGBA32F" />
+					<LEVEL value=0 />
+				</imageTexture>
+				<imageTexture UNIT=4 texture="simData2" >
+					<ACCESS value="WRITE_ONLY" />
+					<INTERNAL_FORMAT value="RGBA32F" />
+					<LEVEL value=0 />
+				</imageTexture>
+				<imageTexture UNIT=5 texture="normalAndHeight" >
+					<ACCESS value="WRITE_ONLY" />
+					<INTERNAL_FORMAT value="RGBA32F" />
+					<LEVEL value=0 />
+				</imageTexture>
+			</imageTextures>
+		</material>
+
+		<!--***********************************************************************************
+			Debug
+		************************************************************************************-->
+		<material name="mat_showCausticQuad">
+			<shader name="shader_showQuad">
+				<values>
+					<valueof uniform="tex"		type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=0 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="causticsMap" />
+			</textures>
+		</material>
+
+		<material name="mat_showCausticPathQuad">
+			<shader name="shader_showQuadPath">
+				<values>
+					<valueof uniform="tex"		type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=0 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="causticsMapPath" />
+			</textures>
+		</material>
+
+		<material name="mat_showMipLevel">
+			<shader name="shader_showMipLevel">
+				<values>
+				<valueof uniform="maxVal"		type="RENDERER" context="CURRENT" component="terrainMult" />
+				<valueof uniform="finestLevel" 	type="RENDERER" 	context="CURRENT"	component="finestLevel"  />
+				<valueof uniform="tex"			type="TEXTURE_BINDING" 	context="CURRENT" component="UNIT" id=0 />
+				</values>
+			</shader>
+
+			<textures>
+				<texture UNIT=0 name="bathymetry" >
+					<MIN_FILTER value="NEAREST" />
+					<MAG_FILTER value="NEAREST" />
+				</texture> 
+			</textures>
+		</material>
+
+		<material name="mat_causticsMapDebug" >
+			<shader name="shader_causticsMapDebug">
+				<values>
+					<valueof uniform="m_pvm"  type="RENDERER" context="CURRENT" component="PROJECTION_VIEW_MODEL" />
+				</values>
+			</shader>
+
+			<state name="causticsMap"/>
+		</material>
+		
+		
+	</materials>
+
+</materialLib>
